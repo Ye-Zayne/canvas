@@ -8,11 +8,25 @@
 - **Agent → 画布**：Agent 把生成的文本、Markdown、图片、视频、音频、任意文件，以独立卡片的形式实时推送到画布，支持 tldraw 的全部基础操作（拖拽、缩放、旋转、分组、批注等）。
 - **画布 → Agent**：在画布上点选卡片 →「加入对话」，再在 codex / claude code 里用 `/canvas-pull` 把这些内容作为上下文带回对话流。
 
+## 两种形态（自动切换）
+
+同一套画布，运行时自动选择渲染方式：
+
+| 形态 | 触发条件 | 体验 |
+| --- | --- | --- |
+| **内嵌画布**（MCP Apps） | 客户端支持 [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview)（如 Claude / Claude Desktop） | 调用 `canvas_show` 后画布**直接嵌在对话面板内** |
+| **浏览器画布**（回退） | 不支持 MCP Apps 的客户端（如当前的 Codex） | 调用 `canvas_open` 打开 `http://127.0.0.1:4399` |
+
+> MCP Apps 是 MCP 官方协议的开放扩展。内嵌模式下，`ui://canvas/app.html` 只是一个装壳页，真正的画布 JS/CSS 通过 CSP 白名单从本地 `bridge-server` 加载，因此内嵌与浏览器共用同一份构建产物。两端「加入对话」行为一致（入队 + `/canvas-pull`）。
+
 ## 架构
 
 ```
-codex / claude code  ──stdio(MCP)──►  bridge-server  ──WebSocket──►  浏览器画布(tldraw)
-                                        │  （同时用 express 托管前端 + 代理本地文件）
+codex / claude code
+   │
+   ├─ stdio(MCP) ──► bridge-server ──┬─ WebSocket ──► 浏览器画布(tldraw)   [浏览器模式]
+   │                                 └─ ui://资源 ──► 内嵌 iframe 画布      [MCP Apps 模式]
+   │                                    （express 托管前端 + 代理本地文件）
 ```
 
 - `packages/canvas-web`：React + Vite + TypeScript + tldraw + shadcn/ui 画布前端。
@@ -94,13 +108,15 @@ args = ["<绝对路径>/ai-canvas/packages/bridge-server/dist/index.js"]
 ### Tools（Agent 主动调用）
 | 工具 | 说明 |
 | --- | --- |
-| `canvas_open` | 返回画布浏览器地址 |
+| `canvas_show` | **内嵌打开画布**（支持 MCP Apps 的客户端在对话面板内渲染） |
+| `canvas_open` | 返回画布浏览器地址（回退方式） |
 | `canvas_add_text` | 推送文本 / Markdown 卡片 |
 | `canvas_add_image` | 推送图片（本地路径或 URL） |
 | `canvas_add_media` | 推送视频 / 音频 |
 | `canvas_add_file` | 推送任意文件卡片（可下载） |
 | `canvas_list` | 列出画布上所有卡片摘要 |
 | `canvas_pull` | 取出用户「加入对话」的内容（出队） |
+| `canvas_enqueue` | 内嵌画布内部调用：把选中卡片入队（一般不由用户直接触发） |
 
 ### Prompts（slash 命令）
 - `canvas-pull`、`canvas-open`
