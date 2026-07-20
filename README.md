@@ -1,5 +1,8 @@
 # AI 对话画布（AI Canvas）
 
+[![CI](https://github.com/Ye-Zayne/canvas/actions/workflows/ci.yml/badge.svg)](https://github.com/Ye-Zayne/canvas/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 一个可长期固定在 **codex / claude code** 里的对话画布插件。基于 **tldraw + shadcn/ui**，通过内置 **MCP Server** 与 Agent 双向通信：
 
 - **Agent → 画布**：Agent 把生成的文本、Markdown、图片、视频、音频、任意文件，以独立卡片的形式实时推送到画布，支持 tldraw 的全部基础操作（拖拽、缩放、旋转、分组、批注等）。
