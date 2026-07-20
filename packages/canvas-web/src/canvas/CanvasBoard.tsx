@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useRef } from 'react';
 import { Tldraw, Editor, createShapeId, type TLShapeId } from 'tldraw';
 import 'tldraw/tldraw.css';
 import { CanvasCardShapeUtil, type CanvasCardShape } from './shapes/CanvasCardShape';

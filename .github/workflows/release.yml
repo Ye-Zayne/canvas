@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # 打包发布产物：前端 dist + 后端 dist + 运行所需清单
+      - name: Package artifacts
+        run: |
+          mkdir -p release/ai-canvas
+          cp -r packages/canvas-web/dist release/ai-canvas/canvas-web-dist
+          cp -r packages/bridge-server/dist release/ai-canvas/bridge-server-dist
+          cp README.md LICENSE package.json pnpm-workspace.yaml release/ai-canvas/
+          cd release && tar -czf ai-canvas-${{ github.ref_name }}.tar.gz ai-canvas && zip -qr ai-canvas-${{ github.ref_name }}.zip ai-canvas
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release/ai-canvas-${{ github.ref_name }}.tar.gz
+            release/ai-canvas-${{ github.ref_name }}.zip

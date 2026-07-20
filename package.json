@@ -2,13 +2,18 @@
   "name": "ai-canvas",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "AI 对话画布插件：tldraw + shadcn + MCP 双向桥，用于 codex / claude code",
   "scripts": {
     "dev": "pnpm --parallel -r dev",
     "dev:web": "pnpm --filter canvas-web dev",
     "dev:server": "pnpm --filter bridge-server dev",
     "build": "pnpm --filter canvas-web build && pnpm --filter bridge-server build",
-    "start": "node packages/bridge-server/dist/index.js"
+    "start": "node packages/bridge-server/dist/index.js",
+    "lint": "node scripts/run-bin.mjs eslint .",
+    "lint:fix": "node scripts/run-bin.mjs eslint . --fix",
+    "format": "node scripts/run-bin.mjs prettier --write \"packages/**/src/**/*.{ts,tsx}\"",
+    "format:check": "node scripts/run-bin.mjs prettier --check \"packages/**/src/**/*.{ts,tsx}\""
   },
   "packageManager": "pnpm@10.31.0",
   "engines": {
@@ -16,5 +21,14 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": ["esbuild", "core-js"]
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "eslint": "^9.17.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.16",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "typescript-eslint": "^8.19.0"
   }
 }

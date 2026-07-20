@@ -3,13 +3,7 @@
  * server 与 browser 共享同一套语义（前端有各自的副本）。
  */
 
-export type NodeKind =
-  | 'text'
-  | 'markdown'
-  | 'image'
-  | 'video'
-  | 'audio'
-  | 'file';
+export type NodeKind = 'text' | 'markdown' | 'image' | 'video' | 'audio' | 'file';
 
 export interface CanvasNode {
   id: string;

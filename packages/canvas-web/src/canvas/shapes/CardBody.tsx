@@ -60,7 +60,14 @@ export function CardBody({ shape }: { shape: CanvasCardShape }) {
 }
 
 function defaultTitle(kind: NodeKind): string {
-  return { text: '文本', markdown: 'Markdown', image: '图片', video: '视频', audio: '音频', file: '文件' }[kind];
+  return {
+    text: '文本',
+    markdown: 'Markdown',
+    image: '图片',
+    video: '视频',
+    audio: '音频',
+    file: '文件',
+  }[kind];
 }
 
 function Content({

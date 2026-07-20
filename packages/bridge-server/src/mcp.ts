@@ -11,7 +11,7 @@ import { store } from './store.js';
 import { broadcast } from './ws.js';
 import { toAssetUrl } from './assets.js';
 import { canvasUrl } from './config.js';
-import type { CanvasNode, NodeKind } from './types.js';
+import type { CanvasNode } from './types.js';
 
 const log = (...a: unknown[]) => console.error('[mcp]', ...a);
 
@@ -39,14 +39,9 @@ export function createMcpServer(): McpServer {
   const server = new McpServer({ name: 'ai-canvas', version: '0.1.0' });
 
   // ---- Tools ----
-  server.tool(
-    'canvas_open',
-    '打开/获取画布的浏览器地址。用户想查看画布时调用。',
-    {},
-    async () => ({
-      content: [{ type: 'text', text: `画布地址：${canvasUrl()}\n请在浏览器中打开以查看内容。` }],
-    })
-  );
+  server.tool('canvas_open', '打开/获取画布的浏览器地址。用户想查看画布时调用。', {}, async () => ({
+    content: [{ type: 'text', text: `画布地址：${canvasUrl()}\n请在浏览器中打开以查看内容。` }],
+  }));
 
   server.tool(
     'canvas_add_text',
@@ -115,14 +110,9 @@ export function createMcpServer(): McpServer {
     }
   );
 
-  server.tool(
-    'canvas_list',
-    '列出画布上当前所有组件的摘要。',
-    {},
-    async () => ({
-      content: [{ type: 'text', text: formatNodes(store.listNodes()) }],
-    })
-  );
+  server.tool('canvas_list', '列出画布上当前所有组件的摘要。', {}, async () => ({
+    content: [{ type: 'text', text: formatNodes(store.listNodes()) }],
+  }));
 
   server.tool(
     'canvas_pull',
@@ -139,20 +129,16 @@ export function createMcpServer(): McpServer {
   );
 
   // ---- Prompts（暴露为 slash 命令）----
-  server.prompt(
-    'canvas-pull',
-    '拉取画布上选中并加入对话的内容',
-    async () => {
-      const nodes = store.drainQueue();
-      const text =
-        nodes.length === 0
-          ? '当前画布队列为空。请先在画布上选中组件并点击「加入对话」，再执行本命令。'
-          : `请参考以下我从画布带入的内容继续：\n\n${formatNodes(nodes)}`;
-      return {
-        messages: [{ role: 'user', content: { type: 'text', text } }],
-      };
-    }
-  );
+  server.prompt('canvas-pull', '拉取画布上选中并加入对话的内容', async () => {
+    const nodes = store.drainQueue();
+    const text =
+      nodes.length === 0
+        ? '当前画布队列为空。请先在画布上选中组件并点击「加入对话」，再执行本命令。'
+        : `请参考以下我从画布带入的内容继续：\n\n${formatNodes(nodes)}`;
+    return {
+      messages: [{ role: 'user', content: { type: 'text', text } }],
+    };
+  });
 
   server.prompt('canvas-open', '打开对话画布', async () => ({
     messages: [

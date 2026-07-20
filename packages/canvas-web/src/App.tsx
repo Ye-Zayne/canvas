@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Editor } from 'tldraw';
 import { toast, Toaster } from 'sonner';
 import { CanvasBoard, upsertCard, removeCard, shapeIdForNode } from './canvas/CanvasBoard';
-import { useBridge, type ConnStatus } from './hooks/useBridge';
+import { useBridge } from './hooks/useBridge';
 import { Toolbar } from './components/Toolbar';
 import { QueueDrawer } from './components/QueueDrawer';
 import type { CanvasNode } from './lib/types';
@@ -135,5 +135,12 @@ export default function App() {
 }
 
 function kindLabel(kind: CanvasNode['kind']): string {
-  return { text: '文本', markdown: '内容', image: '图片', video: '视频', audio: '音频', file: '文件' }[kind];
+  return {
+    text: '文本',
+    markdown: '内容',
+    image: '图片',
+    video: '视频',
+    audio: '音频',
+    file: '文件',
+  }[kind];
 }
