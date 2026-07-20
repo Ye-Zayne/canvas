@@ -1,0 +1,163 @@
+# AI 对话画布（AI Canvas）
+
+一个可长期固定在 **codex / claude code** 里的对话画布插件。基于 **tldraw + shadcn/ui**，通过内置 **MCP Server** 与 Agent 双向通信：
+
+- **Agent → 画布**：Agent 把生成的文本、Markdown、图片、视频、音频、任意文件，以独立卡片的形式实时推送到画布，支持 tldraw 的全部基础操作（拖拽、缩放、旋转、分组、批注等）。
+- **画布 → Agent**：在画布上点选卡片 →「加入对话」，再在 codex / claude code 里用 `/canvas-pull` 把这些内容作为上下文带回对话流。
+
+## 架构
+
+```
+codex / claude code  ──stdio(MCP)──►  bridge-server  ──WebSocket──►  浏览器画布(tldraw)
+                                        │  （同时用 express 托管前端 + 代理本地文件）
+```
+
+- `packages/canvas-web`：React + Vite + TypeScript + tldraw + shadcn/ui 画布前端。
+- `packages/bridge-server`：Node 服务，同时是 MCP Server（被 Agent 连接）+ WebSocket/REST 服务（被浏览器连接）+ 静态托管 + 本地文件代理。
+
+## 快速开始
+
+### 1. 安装依赖
+
+```bash
+cd ai-canvas
+pnpm install
+```
+
+> 若你的目录路径包含冒号 `:`（如本项目），pnpm 无法把 `.bin` 加入 PATH。项目已内置 `scripts/run-bin.mjs` 自动绕过，无需额外处理。
+
+### 2. 构建
+
+```bash
+pnpm build
+```
+
+### 3. 启动
+
+```bash
+./start.sh
+# 或
+pnpm start
+```
+
+启动后画布地址：**http://127.0.0.1:4399**（可用环境变量 `CANVAS_PORT` 修改端口）。
+
+### 开发模式（热更新）
+
+分两个终端：
+
+```bash
+pnpm dev:server   # 启动 bridge-server（HTTP+WS+MCP）
+pnpm dev:web      # 启动 Vite 开发服务器（http://localhost:5173，已代理 /ws /assets /api）
+```
+
+## 接入 codex / claude code
+
+### Claude Code
+
+在项目根或全局的 `.mcp.json` 添加：
+
+```json
+{
+  "mcpServers": {
+    "canvas": {
+      "command": "node",
+      "args": ["<绝对路径>/ai-canvas/packages/bridge-server/dist/index.js"]
+    }
+  }
+}
+```
+
+MCP 的 prompts 会自动暴露为 slash 命令，例如：
+- `/mcp__canvas__canvas-pull` — 拉取画布上加入对话的内容
+- `/mcp__canvas__canvas-open` — 获取画布地址
+
+resources 可用 `@` 引用：`@canvas://selection`、`@canvas://all`。
+
+### Codex
+
+在 `~/.codex/config.toml` 添加：
+
+```toml
+[mcp_servers.canvas]
+command = "node"
+args = ["<绝对路径>/ai-canvas/packages/bridge-server/dist/index.js"]
+```
+
+> 注意：Agent 客户端会自行以 stdio 方式 spawn bridge-server。该进程同时会监听 4399 端口提供画布 UI，因此**无需再单独运行** `start.sh`（除非你想在开发模式下调试前端）。
+
+## MCP 能力清单
+
+### Tools（Agent 主动调用）
+| 工具 | 说明 |
+| --- | --- |
+| `canvas_open` | 返回画布浏览器地址 |
+| `canvas_add_text` | 推送文本 / Markdown 卡片 |
+| `canvas_add_image` | 推送图片（本地路径或 URL） |
+| `canvas_add_media` | 推送视频 / 音频 |
+| `canvas_add_file` | 推送任意文件卡片（可下载） |
+| `canvas_list` | 列出画布上所有卡片摘要 |
+| `canvas_pull` | 取出用户「加入对话」的内容（出队） |
+
+### Prompts（slash 命令）
+- `canvas-pull`、`canvas-open`
+
+### Resources（@ 引用）
+- `canvas://selection`、`canvas://all`
+
+## 典型用法
+
+1. 让 Agent 生成内容并推到画布：
+   > “把这段方案画到画布上” → Agent 调用 `canvas_add_text`
+   > “把 /tmp/demo.mp4 放到画布” → Agent 调用 `canvas_add_media`
+2. 在浏览器画布里自由排布、缩放这些卡片。
+3. 选中若干卡片，点卡片上的「加入对话」或工具栏「选中加入」。
+4. 回到 codex / claude code，执行 `/canvas-pull`，选中内容即作为上下文进入对话。
+
+## 目录结构
+
+```
+ai-canvas/
+├─ package.json              # pnpm workspace 根
+├─ pnpm-workspace.yaml
+├─ start.sh                  # 一键启动
+├─ scripts/run-bin.mjs       # 绕过含 ":" 路径的 bin 启动器
+└─ packages/
+   ├─ canvas-web/            # 前端画布
+   │  └─ src/
+   │     ├─ App.tsx
+   │     ├─ canvas/CanvasBoard.tsx
+   │     ├─ canvas/shapes/{CanvasCardShape,CardBody}.tsx
+   │     ├─ components/{Toolbar,QueueDrawer}.tsx
+   │     ├─ components/ui/{button,badge,sheet}.tsx
+   │     ├─ hooks/useBridge.ts
+   │     └─ lib/{types,utils}.ts
+   └─ bridge-server/         # MCP + WS + REST
+      └─ src/
+         ├─ index.ts         # 入口
+         ├─ mcp.ts           # MCP tools/prompts/resources
+         ├─ ws.ts            # WebSocket 广播
+         ├─ store.ts         # 状态 + 拉取队列
+         ├─ assets.ts        # 本地文件代理
+         ├─ config.ts
+         └─ types.ts
+```
+
+## 说明与约束
+
+- **本地文件访问**：浏览器不能直接读磁盘，本地媒体统一经 bridge-server 的 `/assets/:id` 代理（支持 Range，视频可拖动进度）。
+- **大文件**：优先传路径而非 base64，避免 MCP 消息体过大。
+- **单画布**：MVP 为单用户单画布内存状态；持久化（保存/恢复）可后续扩展。
+- **端口**：默认 `4399`，用 `CANVAS_PORT` 覆盖。
+
+## 调试（不接 Agent 也能测）
+
+```bash
+# 仅起 HTTP+WS，不起 MCP
+node packages/bridge-server/dist/index.js --no-mcp
+
+# 直接用 REST 推一张卡片到画布
+curl -X POST http://127.0.0.1:4399/api/nodes \
+  -H 'Content-Type: application/json' \
+  -d '{"kind":"markdown","title":"示例","content":"# Hello\n来自 REST"}'
+```
