@@ -60,7 +60,7 @@ jobs:
 
       # 缓存 Vite 依赖预构建，加速重复构建
       - name: Cache Vite
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             packages/canvas-web/node_modules/.vite
