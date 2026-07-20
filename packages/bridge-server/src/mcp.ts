@@ -13,6 +13,33 @@ import { toAssetUrl } from './assets.js';
 import { canvasUrl } from './config.js';
 import type { CanvasNode } from './types.js';
 
+/** MCP Apps 内嵌画布的 UI 资源 URI */
+const CANVAS_UI_URI = 'ui://canvas/app.html';
+
+/**
+ * 装壳 HTML：iframe 只装壳，画布 JS/CSS 从本地 server 加载（CSP 白名单）。
+ * 通过 ?embed=1 让前端探测到内嵌模式，切换到 McpAppTransport。
+ */
+function embedShellHtml(): string {
+  const base = canvasUrl();
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Canvas</title>
+    <base href="${base}/" />
+  </head>
+  <body style="margin:0">
+    <iframe
+      src="${base}/?embed=1"
+      style="border:0;width:100vw;height:100vh;display:block"
+      allow="clipboard-write; autoplay"
+    ></iframe>
+  </body>
+</html>`;
+}
+
 const log = (...a: unknown[]) => console.error('[mcp]', ...a);
 
 /** 把节点加入 store 并广播到画布 */
@@ -42,6 +69,30 @@ export function createMcpServer(): McpServer {
   server.tool('canvas_open', '打开/获取画布的浏览器地址。用户想查看画布时调用。', {}, async () => ({
     content: [{ type: 'text', text: `画布地址：${canvasUrl()}\n请在浏览器中打开以查看内容。` }],
   }));
+
+  // MCP Apps：在支持的宿主里内嵌渲染画布面板。工具挂 _meta.ui 指向 UI 资源。
+  server.registerTool(
+    'canvas_show',
+    {
+      description: '在客户端内嵌打开对话画布（支持 MCP Apps 的客户端会直接在对话面板内渲染）。',
+      inputSchema: {},
+      _meta: {
+        'openai/outputTemplate': CANVAS_UI_URI,
+        ui: {
+          resourceUri: CANVAS_UI_URI,
+          preferredSize: { width: 1280, height: 800 },
+          csp: {
+            // 允许内嵌 iframe 从本地 bridge-server 加载画布 JS/CSS 与本地资产
+            resourceDomains: [canvasUrl()],
+          },
+        },
+      },
+    },
+    async () => ({
+      content: [{ type: 'text', text: `画布已打开。若客户端不支持内嵌，请访问：${canvasUrl()}` }],
+      _meta: { ui: { resourceUri: CANVAS_UI_URI } },
+    })
+  );
 
   server.tool(
     'canvas_add_text',
@@ -114,6 +165,33 @@ export function createMcpServer(): McpServer {
     content: [{ type: 'text', text: formatNodes(store.listNodes()) }],
   }));
 
+  // 内嵌模式：画布 iframe 通过 tools/call 调此工具把选中项入队（等价浏览器的 selection_enqueue）
+  server.tool(
+    'canvas_enqueue',
+    '把画布上用户选中的节点加入拉取队列（内嵌画布内部调用，一般不由用户直接触发）。',
+    {
+      nodes: z
+        .array(
+          z.object({
+            id: z.string(),
+            kind: z.enum(['text', 'markdown', 'image', 'video', 'audio', 'file']),
+            title: z.string().optional(),
+            content: z.string().optional(),
+            assetUrl: z.string().optional(),
+            mime: z.string().optional(),
+            createdAt: z.number().optional(),
+          })
+        )
+        .describe('要加入对话队列的节点列表'),
+    },
+    async ({ nodes }) => {
+      store.enqueue(nodes as CanvasNode[]);
+      return {
+        content: [{ type: 'text', text: `已加入 ${nodes.length} 项到对话队列，可执行 /canvas-pull 拉取。` }],
+      };
+    }
+  );
+
   server.tool(
     'canvas_pull',
     '取出用户在画布上「加入对话」的选中内容（出队并清空队列），作为上下文带入本次对话。',
@@ -165,6 +243,31 @@ export function createMcpServer(): McpServer {
     { description: '画布上的全部内容', mimeType: 'text/plain' },
     async (uri) => ({
       contents: [{ uri: uri.href, text: formatNodes(store.listNodes()) }],
+    })
+  );
+
+  // ---- MCP Apps UI 资源（内嵌画布装壳 HTML）----
+  server.resource(
+    'canvas-app',
+    CANVAS_UI_URI,
+    {
+      description: '内嵌对话画布的 UI 资源（MCP Apps）',
+      mimeType: 'text/html+skybridge',
+    },
+    async (uri) => ({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: 'text/html+skybridge',
+          text: embedShellHtml(),
+          _meta: {
+            ui: {
+              csp: { resourceDomains: [canvasUrl()] },
+              preferredSize: { width: 1280, height: 800 },
+            },
+          },
+        },
+      ],
     })
   );
 

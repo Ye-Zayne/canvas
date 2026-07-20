@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CanvasNode, PushMsg, ReportMsg } from '@/lib/types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CanvasNode } from '@/lib/types';
+import type { CanvasTransport, ConnStatus } from '@/bridge/transport';
+import { createTransport } from '@/bridge/createTransport';
 
-export type ConnStatus = 'connecting' | 'open' | 'closed';
+export type { ConnStatus } from '@/bridge/transport';
 
 interface UseBridgeOptions {
   onAdd: (node: CanvasNode) => void;
@@ -11,79 +13,34 @@ interface UseBridgeOptions {
   onSnapshot: (nodes: CanvasNode[]) => void;
 }
 
-/** 与 bridge-server 建立 WebSocket 连接，处理推送并提供上报能力 */
+/**
+ * 通过传输适配层与后端通信。底层可能是 WebSocket（浏览器模式）
+ * 或 MCP Apps postMessage（内嵌模式），对 App.tsx 透明。
+ */
 export function useBridge(opts: UseBridgeOptions) {
   const [status, setStatus] = useState<ConnStatus>('connecting');
-  const wsRef = useRef<WebSocket | null>(null);
   const optsRef = useRef(opts);
   optsRef.current = opts;
 
-  const connect = useCallback(() => {
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = `${proto}://${location.host}/ws`;
-    setStatus('connecting');
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setStatus('open');
-      ws.send(JSON.stringify({ type: 'hello' } satisfies ReportMsg));
-    };
-
-    ws.onmessage = (ev) => {
-      let msg: PushMsg;
-      try {
-        msg = JSON.parse(ev.data);
-      } catch {
-        return;
-      }
-      const o = optsRef.current;
-      switch (msg.type) {
-        case 'add_node':
-          o.onAdd(msg.node);
-          break;
-        case 'update_node':
-          o.onUpdate(msg.id, msg.patch);
-          break;
-        case 'remove_node':
-          o.onRemove(msg.id);
-          break;
-        case 'clear':
-          o.onClear();
-          break;
-        case 'snapshot':
-          o.onSnapshot(msg.nodes);
-          break;
-        case 'ping':
-          ws.send(JSON.stringify({ type: 'pong' } satisfies ReportMsg));
-          break;
-      }
-    };
-
-    ws.onclose = () => {
-      setStatus('closed');
-      // 自动重连
-      setTimeout(() => connect(), 1500);
-    };
-    ws.onerror = () => ws.close();
-  }, []);
+  // 传输实例整个生命周期只创建一次
+  const transport = useMemo<CanvasTransport>(() => createTransport(), []);
 
   useEffect(() => {
-    connect();
-    return () => wsRef.current?.close();
-  }, [connect]);
-
-  const report = useCallback((msg: ReportMsg) => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(msg));
-    }
-  }, []);
+    const cleanup = transport.connect({
+      onAdd: (n) => optsRef.current.onAdd(n),
+      onUpdate: (id, patch) => optsRef.current.onUpdate(id, patch),
+      onRemove: (id) => optsRef.current.onRemove(id),
+      onClear: () => optsRef.current.onClear(),
+      onSnapshot: (nodes) => optsRef.current.onSnapshot(nodes),
+      onStatus: setStatus,
+    });
+    return cleanup;
+  }, [transport]);
 
   const enqueue = useCallback(
-    (nodes: CanvasNode[]) => report({ type: 'selection_enqueue', nodes }),
-    [report]
+    (nodes: CanvasNode[]) => transport.enqueue(nodes),
+    [transport]
   );
 
-  return { status, enqueue, report };
+  return { status, enqueue, mode: transport.mode };
 }
