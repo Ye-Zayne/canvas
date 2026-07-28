@@ -4,7 +4,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import mime from 'mime-types';
 import { store } from './store.js';
 import { canvasUrl } from './config.js';
@@ -24,10 +24,11 @@ export function toAssetUrl(pathOrUrl: string): { url: string; mime: string } {
 }
 
 /** Express 处理器：按 assetId 返回文件流，支持 Range（音视频拖动） */
-export function serveAsset(req: Request, res: Response): void {
+export function serveAsset(req: Request, res: Response, next: NextFunction): void {
   const entry = store.getAsset(req.params.id);
   if (!entry || !fs.existsSync(entry.path)) {
-    res.status(404).send('asset not found');
+    // 不是已注册的资产：放行给后续中间件（如 Vite 构建产物 /assets/index-xxx.js）
+    next();
     return;
   }
   const stat = fs.statSync(entry.path);

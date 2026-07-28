@@ -9,6 +9,7 @@
     "preview": "node ../../scripts/run-bin.mjs vite preview"
   },
   "dependencies": {
+    "@xyflow/react": "^12.11.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.468.0",
@@ -17,8 +18,7 @@
     "react-markdown": "^9.0.1",
     "sonner": "^1.7.1",
     "tailwind-merge": "^2.6.0",
-    "tailwindcss-animate": "^1.0.7",
-    "tldraw": "^3.7.0"
+    "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

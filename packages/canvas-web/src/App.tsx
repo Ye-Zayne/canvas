@@ -1,54 +1,60 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Editor } from 'tldraw';
+import { ReactFlowProvider } from '@xyflow/react';
 import { toast, Toaster } from 'sonner';
-import { CanvasBoard, upsertCard, removeCard, shapeIdForNode } from './canvas/CanvasBoard';
+import { CanvasBoard, toFlowNode, type CardFlowNode } from './canvas/CanvasBoard';
 import { useBridge } from './hooks/useBridge';
 import { Toolbar } from './components/Toolbar';
 import { QueueDrawer } from './components/QueueDrawer';
 import type { CanvasNode } from './lib/types';
 
 export default function App() {
-  const editorRef = useRef<Editor | null>(null);
+  // React Flow 节点（画布可视状态）
+  const [flowNodes, setFlowNodes] = useState<CardFlowNode[]>([]);
   // 节点索引：nodeId -> CanvasNode，作为拉取队列与元数据来源
   const nodesRef = useRef<Map<string, CanvasNode>>(new Map());
   const [queue, setQueue] = useState<CanvasNode[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [nodeCount, setNodeCount] = useState(0);
+  const selectedIdsRef = useRef<string[]>([]);
 
   const applyAdd = useCallback((node: CanvasNode) => {
+    const isNew = !nodesRef.current.has(node.id);
     nodesRef.current.set(node.id, node);
     setNodeCount(nodesRef.current.size);
-    const ed = editorRef.current;
-    if (ed) upsertCard(ed, node);
-    if (node.kind !== 'text' && node.kind !== 'markdown') {
-      toast(`新${kindLabel(node.kind)}已加入画布`, { description: node.title });
-    } else {
+
+    setFlowNodes((cur) => {
+      const idx = cur.findIndex((n) => n.id === node.id);
+      if (idx >= 0) {
+        // 已存在：只更新数据，保留位置与尺寸
+        const next = [...cur];
+        const fresh = toFlowNode(node, idx);
+        next[idx] = { ...next[idx], data: fresh.data };
+        return next;
+      }
+      return [...cur, toFlowNode(node, cur.length)];
+    });
+
+    if (isNew) {
       toast('新内容已加入画布', { description: node.title });
     }
   }, []);
 
   const applySnapshot = useCallback((incoming: CanvasNode[]) => {
-    const ed = editorRef.current;
     nodesRef.current = new Map(incoming.map((n) => [n.id, n]));
     setNodeCount(nodesRef.current.size);
-    if (ed) incoming.forEach((n) => upsertCard(ed, n));
+    setFlowNodes(incoming.map((n, i) => toFlowNode(n, i)));
   }, []);
 
   const applyRemove = useCallback((id: string) => {
     nodesRef.current.delete(id);
     setNodeCount(nodesRef.current.size);
-    const ed = editorRef.current;
-    if (ed) removeCard(ed, id);
+    setFlowNodes((cur) => cur.filter((n) => n.id !== id));
   }, []);
 
   const applyClear = useCallback(() => {
-    const ed = editorRef.current;
-    if (ed) {
-      const ids = [...nodesRef.current.keys()].map(shapeIdForNode);
-      ed.deleteShapes(ids);
-    }
     nodesRef.current.clear();
     setNodeCount(0);
+    setFlowNodes([]);
   }, []);
 
   const { status, enqueue } = useBridge({
@@ -83,16 +89,10 @@ export default function App() {
   }, []);
 
   const enqueueSelection = useCallback(() => {
-    const ed = editorRef.current;
-    if (!ed) return;
-    const selected = ed.getSelectedShapes();
     const nodes: CanvasNode[] = [];
-    for (const s of selected) {
-      if (s.type === 'canvas-card') {
-        const nodeId = (s.props as { nodeId: string }).nodeId;
-        const n = nodesRef.current.get(nodeId);
-        if (n) nodes.push(n);
-      }
+    for (const id of selectedIdsRef.current) {
+      const n = nodesRef.current.get(id);
+      if (n) nodes.push(n);
     }
     if (nodes.length === 0) {
       toast.info('请先在画布上选中一个或多个卡片');
@@ -110,7 +110,13 @@ export default function App() {
   return (
     <div className="relative h-full w-full">
       <div className="absolute inset-0">
-        <CanvasBoard onEditorReady={(ed) => (editorRef.current = ed)} />
+        <ReactFlowProvider>
+          <CanvasBoard
+            nodes={flowNodes}
+            onNodesChangeExternal={setFlowNodes}
+            onSelectionChange={(ids) => (selectedIdsRef.current = ids)}
+          />
+        </ReactFlowProvider>
       </div>
 
       <Toolbar
@@ -132,15 +138,4 @@ export default function App() {
       <Toaster position="bottom-right" richColors closeButton />
     </div>
   );
-}
-
-function kindLabel(kind: CanvasNode['kind']): string {
-  return {
-    text: '文本',
-    markdown: '内容',
-    image: '图片',
-    video: '视频',
-    audio: '音频',
-    file: '文件',
-  }[kind];
 }

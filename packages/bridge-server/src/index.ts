@@ -52,7 +52,11 @@ function createHttpServer() {
   const webDist = path.resolve(__dirname, '../../canvas-web/dist');
   if (fs.existsSync(webDist)) {
     app.use(express.static(webDist));
-    app.get('*', (_req, res) => res.sendFile(path.join(webDist, 'index.html')));
+    // SPA 兜底：仅对非静态资源路径返回 index.html，避免掩盖 js/css 404
+    app.get('*', (req, res, next) => {
+      if (/\.[a-z0-9]+$/i.test(req.path)) return next();
+      res.sendFile(path.join(webDist, 'index.html'));
+    });
   } else {
     app.get('/', (_req, res) =>
       res.send(

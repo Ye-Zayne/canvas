@@ -1,83 +1,131 @@
-import { Tldraw, Editor, createShapeId, type TLShapeId } from 'tldraw';
-import 'tldraw/tldraw.css';
-import { CanvasCardShapeUtil, type CanvasCardShape } from './shapes/CanvasCardShape';
+/**
+ * React Flow 画布：无限画布、拖拽、缩放、框选、连线。
+ * 对外暴露 upsert / remove / clear 能力，由 App 驱动。
+ */
+import { useCallback, useMemo } from 'react';
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  MiniMap,
+  useNodesState,
+  useEdgesState,
+  addEdge,
+  SelectionMode,
+  type Node,
+  type Edge,
+  type Connection,
+  type OnSelectionChangeParams,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import { CardNode, type CardNodeData } from './CardNode';
 import type { CanvasNode } from '@/lib/types';
 
-const customShapeUtils = [CanvasCardShapeUtil];
+export type CardFlowNode = Node<CardNodeData, 'card'>;
 
-/** 依据节点 kind 给出默认卡片尺寸 */
-function sizeFor(kind: CanvasNode['kind']): { w: number; h: number } {
+/** 依据节点类型给出初始尺寸 */
+function initialSize(kind: CanvasNode['kind']): { width: number; height: number } {
   switch (kind) {
     case 'image':
-      return { w: 320, h: 260 };
     case 'video':
-      return { w: 400, h: 260 };
+      return { width: 320, height: 260 };
     case 'audio':
-      return { w: 300, h: 140 };
+      return { width: 280, height: 150 };
     case 'file':
-      return { w: 240, h: 160 };
+      return { width: 240, height: 170 };
     default:
-      return { w: 340, h: 220 };
+      return { width: 320, height: 220 };
   }
+}
+
+/** 把 CanvasNode 转换成 React Flow 节点 */
+export function toFlowNode(node: CanvasNode, index: number): CardFlowNode {
+  const size = initialSize(node.kind);
+  // 简单瀑布式排布，避免完全重叠
+  const col = index % 3;
+  const row = Math.floor(index / 3);
+  return {
+    id: node.id,
+    type: 'card',
+    position: { x: 80 + col * 360, y: 80 + row * 300 },
+    width: size.width,
+    height: size.height,
+    dragHandle: '.drag-handle',
+    data: {
+      nodeId: node.id,
+      kind: node.kind,
+      title: node.title ?? '',
+      content: node.content ?? '',
+      assetUrl: node.assetUrl ?? '',
+      mime: node.mime ?? '',
+    },
+  };
 }
 
 interface CanvasBoardProps {
-  /** 把 editor 实例暴露给父组件，用于外部驱动增删 */
-  onEditorReady: (editor: Editor) => void;
+  nodes: CardFlowNode[];
+  onNodesChangeExternal: React.Dispatch<React.SetStateAction<CardFlowNode[]>>;
+  onSelectionChange?: (ids: string[]) => void;
 }
 
-export function CanvasBoard({ onEditorReady }: CanvasBoardProps) {
+export function CanvasBoard({
+  nodes,
+  onNodesChangeExternal,
+  onSelectionChange,
+}: CanvasBoardProps) {
+  const nodeTypes = useMemo(() => ({ card: CardNode }), []);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+
+  const onConnect = useCallback(
+    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
+    [setEdges]
+  );
+
+  // 由 App 持有节点状态，这里只做位置/选中等增量变更回写
+  const handleNodesChange = useCallback(
+    (changes: Parameters<NonNullable<Parameters<typeof ReactFlow>[0]['onNodesChange']>>[0]) => {
+      onNodesChangeExternal((cur) => applyNodeChangesSafe(changes, cur));
+    },
+    [onNodesChangeExternal]
+  );
+
+  const handleSelectionChange = useCallback(
+    (params: OnSelectionChangeParams) => {
+      onSelectionChange?.(params.nodes.map((n) => n.id));
+    },
+    [onSelectionChange]
+  );
+
   return (
-    <Tldraw
-      shapeUtils={customShapeUtils}
-      onMount={(editor) => {
-        onEditorReady(editor);
-      }}
-    />
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={nodeTypes}
+      onNodesChange={handleNodesChange}
+      onEdgesChange={onEdgesChange}
+      onConnect={onConnect}
+      onSelectionChange={handleSelectionChange}
+      selectionMode={SelectionMode.Partial}
+      selectionOnDrag
+      panOnDrag={[1, 2]}
+      panOnScroll
+      zoomOnPinch
+      minZoom={0.15}
+      maxZoom={3}
+      fitView
+      proOptions={{ hideAttribution: false }}
+    >
+      <Background gap={16} size={1} />
+      <Controls showInteractive={false} />
+      <MiniMap pannable zoomable className="!bg-secondary" />
+    </ReactFlow>
   );
 }
 
-/** 把 nodeId 稳定映射到 tldraw shapeId */
-export function shapeIdForNode(nodeId: string): TLShapeId {
-  return createShapeId(`card-${nodeId}`);
+/** 复用 React Flow 的变更应用逻辑（惰性导入以避免类型循环） */
+import { applyNodeChanges, type NodeChange } from '@xyflow/react';
+function applyNodeChangesSafe(changes: NodeChange[], cur: CardFlowNode[]): CardFlowNode[] {
+  return applyNodeChanges(changes as NodeChange<CardFlowNode>[], cur);
 }
 
-/** 在编辑器中创建/更新一个卡片形状 */
-export function upsertCard(editor: Editor, node: CanvasNode) {
-  const id = shapeIdForNode(node.id);
-  const existing = editor.getShape(id);
-  const size = sizeFor(node.kind);
-
-  const props = {
-    nodeId: node.id,
-    kind: node.kind,
-    title: node.title ?? '',
-    content: node.content ?? '',
-    assetUrl: node.assetUrl ?? '',
-    mime: node.mime ?? '',
-  };
-
-  if (existing) {
-    editor.updateShape<CanvasCardShape>({ id, type: 'canvas-card', props });
-    return;
-  }
-
-  // 新卡片：在当前视口中心附近错开摆放
-  const vb = editor.getViewportPageBounds();
-  const count = editor.getCurrentPageShapes().length;
-  const x = vb.minX + 60 + (count % 4) * 40;
-  const y = vb.minY + 60 + (count % 4) * 40;
-
-  editor.createShape<CanvasCardShape>({
-    id,
-    type: 'canvas-card',
-    x,
-    y,
-    props: { ...props, ...size },
-  });
-}
-
-export function removeCard(editor: Editor, nodeId: string) {
-  const id = shapeIdForNode(nodeId);
-  if (editor.getShape(id)) editor.deleteShape(id);
-}
+export { useNodesState };
