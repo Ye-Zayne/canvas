@@ -5,6 +5,22 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.4.0] - 2026-07-28
+
+### 新增
+
+- **一键安装脚本 `install.sh`**：执行一次即可完成环境检查、依赖安装、
+  构建与客户端注册，用户无需手动编辑任何配置文件。
+- 新增 `scripts/register-mcp.mjs`，负责把画布注册到 AI 客户端：
+  - 支持 Codex（`~/.codex/config.toml`）与 Claude Code（`~/.claude.json`）。
+  - **幂等**：重复执行只更新已有条目，不会产生重复配置。
+  - 修改前自动备份为 `.bak`，且不影响文件中其他 MCP 服务与配置段落。
+  - 正确处理包含中文、空格、冒号的项目路径，并显式注入 Node 所在目录到 PATH。
+
+### 变更
+
+- README 快速开始改为以一键安装为主，手动安装步骤保留为备选方案。
+
 ## [0.3.0] - 2026-07-28
 
 ### 变更（破坏性）
@@ -66,6 +82,7 @@
 - bridge-server：MCP（stdio）+ WebSocket + REST + 静态托管 + 本地文件代理。
 - 工程化：ESLint、Prettier、GitHub Actions CI/Release、Dependabot、PR/Issue 模板。
 
+[0.4.0]: https://github.com/Ye-Zayne/canvas/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Ye-Zayne/canvas/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Ye-Zayne/canvas/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Ye-Zayne/canvas/releases/tag/v0.1.0

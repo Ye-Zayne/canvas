@@ -34,7 +34,32 @@ codex / claude code
 
 ## 快速开始
 
-### 1. 安装依赖
+### 一键安装（推荐）
+
+```bash
+cd ai-canvas
+./install.sh
+```
+
+脚本会自动完成：环境检查 → 安装依赖 → 构建 → 注册到 Codex / Claude Code。
+**无需手动编辑任何配置文件。**
+
+安装完成后：
+
+1. 完全退出并重启 Codex / Claude Code（务必 `Cmd + Q`，关窗口无效）
+2. 新建对话，输入「打开画布」
+3. 在浏览器打开返回的地址即可使用
+
+> 脚本可重复执行（幂等）。代码更新后再跑一次即可，不会产生重复配置；
+> 修改前会自动备份为 `config.toml.bak` / `.claude.json.bak`。
+
+---
+
+### 手动安装
+
+若你想自行控制每一步：
+
+#### 1. 安装依赖
 
 ```bash
 cd ai-canvas
@@ -43,13 +68,13 @@ pnpm install
 
 > 若你的目录路径包含冒号 `:`（如本项目），pnpm 无法把 `.bin` 加入 PATH。项目已内置 `scripts/run-bin.mjs` 自动绕过，无需额外处理。
 
-### 2. 构建
+#### 2. 构建
 
 ```bash
 pnpm build
 ```
 
-### 3. 启动
+#### 3. 启动
 
 ```bash
 ./start.sh
@@ -58,6 +83,16 @@ pnpm start
 ```
 
 启动后画布地址：**http://127.0.0.1:4399**（可用环境变量 `CANVAS_PORT` 修改端口）。
+
+#### 4. 注册到客户端
+
+只做注册（不重新构建）：
+
+```bash
+node scripts/register-mcp.mjs "$(pwd)/packages/bridge-server/dist/index.js"
+```
+
+或参考下方「接入 codex / claude code」手动填写配置。
 
 ### 开发模式（热更新）
 
@@ -69,6 +104,8 @@ pnpm dev:web      # 启动 Vite 开发服务器（http://localhost:5173，已代
 ```
 
 ## 接入 codex / claude code
+
+> 使用 `./install.sh` 已自动完成下述配置，本节仅供手动配置或排查参考。
 
 ### Claude Code
 
