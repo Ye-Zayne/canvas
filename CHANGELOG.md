@@ -5,6 +5,27 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### 变更
+
+- **依赖全量升级**（处理 Dependabot PR #1–#5、#7–#10）：
+  - GitHub Actions：`checkout` v4→v7、`setup-node` v4→v7、`upload-artifact` v4→v7、
+    `cache` v4→v6、`pnpm/action-setup` v4→v6。
+  - `sonner` 1.7.4 → 2.0.7（大版本；已在浏览器实测 toast 行为正常）。
+  - `globals` 15→17、`typescript-eslint` → 8.65、`prettier` → 3.9.6、
+    `postcss` → 8.5.23、`eslint-plugin-react-refresh` 0.4→0.5。
+  - `@vitejs/plugin-react` 4 → **5.2.0**（未采用 6.x：其要求 vite 8，
+    当前为 vite 6；5.2.0 兼容 vite 4~8）。
+
+### 修复
+
+- **修复 CI 全部检查失败**：
+  - workflow 与 `package.json` 重复指定 pnpm 版本导致 `Setup pnpm` 步骤直接报错退出。
+  - ESLint 未忽略 `release/`（本地打包产物），产生 5000+ 条误报。
+  - 5 个文件不符合 Prettier 规范，导致 `format:check` 失败。
+- CI Node 版本 20 → 22（runner 已弃用 Node 20）。
+
 ## [0.4.0] - 2026-07-28
 
 ### 新增
