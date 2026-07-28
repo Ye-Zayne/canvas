@@ -27,7 +27,10 @@ export class McpAppTransport implements CanvasTransport {
   private handlers: TransportHandlers | null = null;
   private _status: ConnStatus = 'connecting';
   private nextId = 1;
-  private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
+  private pending = new Map<
+    number,
+    { resolve: (v: unknown) => void; reject: (e: unknown) => void }
+  >();
   private onMessage = (ev: MessageEvent) => this.handleMessage(ev);
 
   get status(): ConnStatus {

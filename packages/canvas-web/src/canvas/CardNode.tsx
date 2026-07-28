@@ -116,7 +116,12 @@ function Content({
       return <pre className="whitespace-pre-wrap p-2.5 text-xs leading-relaxed">{content}</pre>;
     case 'image':
       return (
-        <img src={assetUrl} alt={title} className="h-full w-full object-contain" draggable={false} />
+        <img
+          src={assetUrl}
+          alt={title}
+          className="h-full w-full object-contain"
+          draggable={false}
+        />
       );
     case 'video':
       return <video src={assetUrl} controls className="h-full w-full bg-black object-contain" />;

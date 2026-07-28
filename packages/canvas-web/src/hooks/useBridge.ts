@@ -37,10 +37,7 @@ export function useBridge(opts: UseBridgeOptions) {
     return cleanup;
   }, [transport]);
 
-  const enqueue = useCallback(
-    (nodes: CanvasNode[]) => transport.enqueue(nodes),
-    [transport]
-  );
+  const enqueue = useCallback((nodes: CanvasNode[]) => transport.enqueue(nodes), [transport]);
 
   return { status, enqueue, mode: transport.mode };
 }

@@ -187,7 +187,9 @@ export function createMcpServer(): McpServer {
     async ({ nodes }) => {
       store.enqueue(nodes as CanvasNode[]);
       return {
-        content: [{ type: 'text', text: `已加入 ${nodes.length} 项到对话队列，可执行 /canvas-pull 拉取。` }],
+        content: [
+          { type: 'text', text: `已加入 ${nodes.length} 项到对话队列，可执行 /canvas-pull 拉取。` },
+        ],
       };
     }
   );

@@ -8,13 +8,14 @@ import {
   Background,
   Controls,
   MiniMap,
-  useNodesState,
   useEdgesState,
   addEdge,
+  applyNodeChanges,
   SelectionMode,
   type Node,
   type Edge,
   type Connection,
+  type NodeChange,
   type OnSelectionChangeParams,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -68,11 +69,7 @@ interface CanvasBoardProps {
   onSelectionChange?: (ids: string[]) => void;
 }
 
-export function CanvasBoard({
-  nodes,
-  onNodesChangeExternal,
-  onSelectionChange,
-}: CanvasBoardProps) {
+export function CanvasBoard({ nodes, onNodesChangeExternal, onSelectionChange }: CanvasBoardProps) {
   const nodeTypes = useMemo(() => ({ card: CardNode }), []);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
@@ -122,10 +119,7 @@ export function CanvasBoard({
   );
 }
 
-/** 复用 React Flow 的变更应用逻辑（惰性导入以避免类型循环） */
-import { applyNodeChanges, type NodeChange } from '@xyflow/react';
+/** 复用 React Flow 的变更应用逻辑 */
 function applyNodeChangesSafe(changes: NodeChange[], cur: CardFlowNode[]): CardFlowNode[] {
   return applyNodeChanges(changes as NodeChange<CardFlowNode>[], cur);
 }
-
-export { useNodesState };
