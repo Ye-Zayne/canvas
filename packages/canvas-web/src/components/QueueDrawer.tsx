@@ -1,6 +1,7 @@
 import { X, Trash2, FileText, ImageIcon, Video, Music, File } from 'lucide-react';
 import { Sheet } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
+import { useCanvasMode, actionLabel } from '@/lib/mode';
 import type { CanvasNode, NodeKind } from '@/lib/types';
 
 const ICONS: Record<NodeKind, React.ReactNode> = {
@@ -21,18 +22,21 @@ interface QueueDrawerProps {
 }
 
 export function QueueDrawer({ open, onOpenChange, queue, onRemove, onClear }: QueueDrawerProps) {
+  const { embedded, clientEnv } = useCanvasMode();
+  const label = actionLabel(embedded);
+
   return (
     <Sheet
       open={open}
       onOpenChange={onOpenChange}
-      title="对话队列"
-      description="这些内容已排队。在 codex / claude code 里执行 /canvas-pull 即可带入对话。"
+      title="待取回的内容"
+      description={`回到 ${clientEnv.label}，输入 ${clientEnv.pullCommand} 即可把这些内容带入对话。`}
     >
       {queue.length === 0 ? (
         <div className="mt-10 text-center text-sm text-muted-foreground">
-          队列为空。
+          还没有待取回的内容。
           <br />
-          在画布上点击卡片的「加入对话」按钮。
+          在画布上点卡片的「{label.idle}」按钮即可。
         </div>
       ) : (
         <div className="space-y-2">

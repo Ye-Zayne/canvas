@@ -18,6 +18,7 @@ import { config, canvasUrl } from './config.js';
 import { store } from './store.js';
 import { broadcast, initWebSocket, clientCount } from './ws.js';
 import { serveAsset } from './assets.js';
+import { getClientEnv } from './client-env.js';
 import { startMcp } from './mcp.js';
 
 const log = (...a: unknown[]) => console.error('[bridge]', ...a);
@@ -44,6 +45,8 @@ function createHttpServer() {
     res.json({ ok: true });
   });
   app.get('/api/queue', (_req, res) => res.json(store.peekQueue()));
+  // 客户端环境（前端据此切换交互与文案）
+  app.get('/api/client', (_req, res) => res.json(getClientEnv()));
   app.get('/api/health', (_req, res) =>
     res.json({ ok: true, clients: clientCount(), nodes: store.listNodes().length })
   );

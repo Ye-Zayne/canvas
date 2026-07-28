@@ -5,7 +5,8 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Handle, Position, NodeResizer, type NodeProps } from '@xyflow/react';
-import { FileText, ImageIcon, Video, Music, File, Plus, Download } from 'lucide-react';
+import { FileText, ImageIcon, Video, Music, File, Plus, Download, Send, Check } from 'lucide-react';
+import { useCanvasMode, actionLabel } from '@/lib/mode';
 import type { NodeKind } from '@/lib/types';
 
 const ICONS: Record<NodeKind, React.ReactNode> = {
@@ -35,6 +36,8 @@ function emitEnqueue(nodeId: string) {
 export function CardNode({ data, selected }: NodeProps) {
   const { kind, title, content, assetUrl, mime, nodeId } = data as CardNodeData;
   const [added, setAdded] = useState(false);
+  const { embedded } = useCanvasMode();
+  const label = actionLabel(embedded);
 
   return (
     <>
@@ -59,7 +62,7 @@ export function CardNode({ data, selected }: NodeProps) {
                 ? 'bg-emerald-500 text-white'
                 : 'bg-primary text-primary-foreground hover:bg-primary/90'
             }`}
-            title="加入对话"
+            title={embedded ? '直接发送到当前对话' : '引用，稍后在客户端取回'}
             onClick={(e) => {
               e.stopPropagation();
               emitEnqueue(nodeId);
@@ -67,8 +70,8 @@ export function CardNode({ data, selected }: NodeProps) {
               setTimeout(() => setAdded(false), 1500);
             }}
           >
-            <Plus size={11} />
-            {added ? '已加入' : '加入对话'}
+            {added ? <Check size={11} /> : embedded ? <Send size={11} /> : <Plus size={11} />}
+            {added ? label.done : label.idle}
           </button>
         </div>
 

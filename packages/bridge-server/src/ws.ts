@@ -5,6 +5,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'node:http';
 import { store } from './store.js';
+import { getClientEnv } from './client-env.js';
 import type { PushMsg, ReportMsg } from './types.js';
 
 let wss: WebSocketServer | null = null;
@@ -15,7 +16,8 @@ export function initWebSocket(server: Server): void {
 
   wss.on('connection', (ws) => {
     clients.add(ws);
-    // 新连接立即下发当前快照
+    // 新连接立即下发客户端环境与当前快照
+    send(ws, { type: 'client_env', env: getClientEnv() });
     send(ws, { type: 'snapshot', nodes: store.listNodes() });
 
     ws.on('message', (raw) => {

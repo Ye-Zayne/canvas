@@ -68,6 +68,9 @@ export class WsTransport implements CanvasTransport {
         case 'snapshot':
           h.onSnapshot(msg.nodes);
           break;
+        case 'client_env':
+          h.onClientEnv?.(msg.env);
+          break;
         case 'ping':
           ws.send(JSON.stringify({ type: 'pong' } satisfies ReportMsg));
           break;

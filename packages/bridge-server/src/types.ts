@@ -20,6 +20,13 @@ export interface CanvasNode {
   createdAt: number;
 }
 
+/** 客户端环境信息（供前端切换文案与交互） */
+export interface ClientEnv {
+  kind: 'codex' | 'claude' | 'vscode' | 'unknown';
+  label: string;
+  pullCommand: string;
+}
+
 /** server -> browser 推送消息 */
 export type PushMsg =
   | { type: 'add_node'; node: CanvasNode }
@@ -27,6 +34,7 @@ export type PushMsg =
   | { type: 'remove_node'; id: string }
   | { type: 'clear' }
   | { type: 'snapshot'; nodes: CanvasNode[] }
+  | { type: 'client_env'; env: ClientEnv }
   | { type: 'ping' };
 
 /** browser -> server 上报消息 */

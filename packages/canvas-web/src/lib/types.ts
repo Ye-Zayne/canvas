@@ -13,12 +13,20 @@ export interface CanvasNode {
   createdAt: number;
 }
 
+/** 客户端环境信息（由服务端探测后下发） */
+export interface ClientEnv {
+  kind: 'codex' | 'claude' | 'vscode' | 'unknown';
+  label: string;
+  pullCommand: string;
+}
+
 export type PushMsg =
   | { type: 'add_node'; node: CanvasNode }
   | { type: 'update_node'; id: string; patch: Partial<CanvasNode> }
   | { type: 'remove_node'; id: string }
   | { type: 'clear' }
   | { type: 'snapshot'; nodes: CanvasNode[] }
+  | { type: 'client_env'; env: ClientEnv }
   | { type: 'ping' };
 
 export type ReportMsg =

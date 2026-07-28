@@ -140,6 +140,28 @@ export class McpAppTransport implements CanvasTransport {
       /* 入队失败静默：宿主可能未实现该工具 */
     });
   }
+
+  /**
+   * 内嵌模式独有：直接把内容发回当前对话，无需队列与 /canvas-pull。
+   * 走 MCP Apps 的 ui/sendMessage 能力。
+   */
+  async sendToChat(nodes: CanvasNode[]): Promise<void> {
+    const text = formatForChat(nodes);
+    await this.request('ui/sendMessage', { message: text });
+  }
+}
+
+/** 把节点整理成便于 AI 阅读的文本 */
+function formatForChat(nodes: CanvasNode[]): string {
+  const body = nodes
+    .map((n, i) => {
+      const head = `${i + 1}. [${n.kind}] ${n.title ?? '(无标题)'}`;
+      if (n.content) return `${head}\n${n.content}`;
+      if (n.assetUrl) return `${head}\n资源: ${n.assetUrl}`;
+      return head;
+    })
+    .join('\n\n');
+  return `以下是我从画布带入的内容：\n\n${body}`;
 }
 
 /** 从任意结构里提取 { canvas: PushMsg } 约定字段 */
