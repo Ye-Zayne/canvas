@@ -1,6 +1,6 @@
 {
   "name": "ai-canvas",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "AI 对话画布插件：tldraw + shadcn + MCP 双向桥，用于 codex / claude code",

@@ -3,9 +3,9 @@
 [![CI](https://github.com/Ye-Zayne/canvas/actions/workflows/ci.yml/badge.svg)](https://github.com/Ye-Zayne/canvas/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-一个可长期固定在 **codex / claude code** 里的对话画布插件。基于 **tldraw + shadcn/ui**，通过内置 **MCP Server** 与 Agent 双向通信：
+一个可长期固定在 **codex / claude code** 里的对话画布插件。基于 **React Flow + shadcn/ui**，通过内置 **MCP Server** 与 Agent 双向通信：
 
-- **Agent → 画布**：Agent 把生成的文本、Markdown、图片、视频、音频、任意文件，以独立卡片的形式实时推送到画布，支持 tldraw 的全部基础操作（拖拽、缩放、旋转、分组、批注等）。
+- **Agent → 画布**：Agent 把生成的文本、Markdown、图片、视频、音频、任意文件，以独立卡片的形式实时推送到画布，支持拖拽、缩放、拉伸、多选框选、节点连线等操作。
 - **画布 → Agent**：在画布上点选卡片 →「加入对话」，再在 codex / claude code 里用 `/canvas-pull` 把这些内容作为上下文带回对话流。
 
 ## 两种形态（自动切换）
@@ -24,12 +24,12 @@
 ```
 codex / claude code
    │
-   ├─ stdio(MCP) ──► bridge-server ──┬─ WebSocket ──► 浏览器画布(tldraw)   [浏览器模式]
+   ├─ stdio(MCP) ──► bridge-server ──┬─ WebSocket ──► 浏览器画布(React Flow) [浏览器模式]
    │                                 └─ ui://资源 ──► 内嵌 iframe 画布      [MCP Apps 模式]
    │                                    （express 托管前端 + 代理本地文件）
 ```
 
-- `packages/canvas-web`：React + Vite + TypeScript + tldraw + shadcn/ui 画布前端。
+- `packages/canvas-web`：React + Vite + TypeScript + React Flow（`@xyflow/react`，MIT）+ shadcn/ui 画布前端。
 - `packages/bridge-server`：Node 服务，同时是 MCP Server（被 Agent 连接）+ WebSocket/REST 服务（被浏览器连接）+ 静态托管 + 本地文件代理。
 
 ## 快速开始
