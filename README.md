@@ -24,13 +24,17 @@
 ```
 codex / claude code
    │
-   ├─ stdio(MCP) ──► bridge-server ──┬─ WebSocket ──► 浏览器画布(React Flow) [浏览器模式]
-   │                                 └─ ui://资源 ──► 内嵌 iframe 画布      [MCP Apps 模式]
-   │                                    （express 托管前端 + 代理本地文件）
+   ├─ stdio(MCP) ──► MCP 进程（轻量无状态）
+                        │ HTTP
+                        ▼
+                     daemon（detached，不随客户端退出）
+                     ├─ WebSocket ──► 浏览器画布(React Flow) [浏览器模式]
+                     ├─ ui://资源 ──► 内嵌 iframe 画布      [MCP Apps 模式]
+                     └─ 持久化 ────► <项目根>/.aicanvas/canvas.json
 ```
 
 - `packages/canvas-web`：React + Vite + TypeScript + React Flow（`@xyflow/react`，MIT）+ shadcn/ui 画布前端。
-- `packages/bridge-server`：Node 服务，同时是 MCP Server（被 Agent 连接）+ WebSocket/REST 服务（被浏览器连接）+ 静态托管 + 本地文件代理。
+- `packages/bridge-server`：同一份代码两种角色——**MCP 进程**（被客户端 spawn，只做协议转发）与 **daemon**（持有画布状态，提供 HTTP/WS/静态托管/本地文件代理）。
 
 ## 快速开始
 
@@ -138,7 +142,7 @@ command = "node"
 args = ["<绝对路径>/ai-canvas/packages/bridge-server/dist/index.js"]
 ```
 
-> 注意：Agent 客户端会自行以 stdio 方式 spawn bridge-server。该进程同时会监听 4399 端口提供画布 UI，因此**无需再单独运行** `start.sh`（除非你想在开发模式下调试前端）。
+> 注意：Agent 客户端会自行以 stdio 方式 spawn MCP 进程，该进程会自动拉起（或复用）项目级 daemon 提供画布 UI，因此**无需再单独运行** `start.sh`（除非你想在开发模式下调试前端）。
 
 ## MCP 能力清单
 
@@ -191,8 +195,11 @@ ai-canvas/
    │     └─ lib/{types,mode,utils}.ts
    └─ bridge-server/         # MCP + WS + REST
       └─ src/
-         ├─ index.ts         # 入口
+         ├─ index.ts         # 入口（MCP / daemon / 调试 三种模式）
+         ├─ cli.ts           # daemon start/stop/status
          ├─ mcp.ts           # MCP tools/prompts/resources
+         ├─ daemon-client.ts # MCP 侧：确保 daemon 存在 + HTTP 调用
+         ├─ daemon-state.ts  # 状态文件、陈旧检测、端口分配
          ├─ ws.ts            # WebSocket 广播
          ├─ store.ts         # 内存状态 + 拉取队列
          ├─ canvas-service.ts # 加载/落盘/素材重注册
@@ -237,19 +244,67 @@ ai-canvas/
 
 ## 说明与约束
 
-- **本地文件访问**：浏览器不能直接读磁盘，本地媒体统一经 bridge-server 的 `/assets/:id` 代理（支持 Range，视频可拖动进度）。
+- **本地文件访问**：浏览器不能直接读磁盘，本地媒体统一经 daemon 的 `/assets/:id` 代理（支持 Range，视频可拖动进度）。
 - **大文件**：优先传路径而非 base64，避免 MCP 消息体过大。
 - **单画布**：当前为单项目单画布（多 Page 尚未支持）。
-- **端口**：默认 `4399`，用 `CANVAS_PORT` 覆盖。
+- **端口**：默认偏好 `4399`，被占用时自动换端口；可用 `CANVAS_PORT` 指定偏好值。
+- **本地只读于自己**：daemon 仅监听 `127.0.0.1`，不对外网暴露；本阶段未加访问 token。
+
+## 项目级 daemon
+
+画布服务以 **daemon** 方式运行，**不依赖某个对话存活**：
+
+```
+客户端 ──spawn─► MCP 进程（轻量、无状态）
+                     │ HTTP
+                     ▼
+                  daemon（detached，独立存活）
+                  ├─ 画布状态 + 持久化
+                  └─ HTTP + WebSocket
+```
+
+关掉对话、重启客户端，**画布与数据不受影响**。
+
+### 一个项目一个 daemon
+
+状态记录在 `~/.aicanvas/daemons/<项目哈希>.json`（可用 `AICANVAS_HOME` 改位置）。
+同一项目重复启动会**复用**已有 daemon；不同项目各自独立、自动分配不同端口。
+
+复用判定需**三条同时成立**：状态文件存在、pid 进程存活、健康接口返回的
+`projectRoot` 与当前一致。缺一即视为陈旧并自动清理。
+
+> 为何不能只判 pid：pid 可能已被系统回收并复用给其他进程。
+
+### 管理命令
+
+```bash
+pnpm daemon          # 启动（或复用）当前项目的 daemon
+pnpm daemon:status   # 查看 pid / 端口 / 运行时长 / 日志位置
+pnpm daemon:stop     # 停止（会先落盘再退出）
+```
+
+daemon 日志写在 `~/.aicanvas/daemons/<哈希>.log`。
+因为 detached 进程不能继承 stdio（会污染 MCP 的 stdio 协议通道），所以日志必须落文件。
 
 ## 调试（不接 Agent 也能测）
 
 ```bash
-# 仅起 HTTP+WS，不起 MCP
+# 仅起 HTTP+WS，不起 MCP、不注册 daemon 状态
 node packages/bridge-server/dist/index.js --no-mcp
 
 # 直接用 REST 推一张卡片到画布
 curl -X POST http://127.0.0.1:4399/api/nodes \
   -H 'Content-Type: application/json' \
   -d '{"kind":"markdown","title":"示例","content":"# Hello\n来自 REST"}'
+
+# 查看 daemon 状态与日志位置
+pnpm daemon:status
 ```
+
+三种运行模式：
+
+| 命令 | 用途 |
+| --- | --- |
+| `node dist/index.js` | MCP 模式（客户端 spawn），自身无状态，自动确保 daemon 存在 |
+| `node dist/index.js --daemon` | daemon 模式（纯服务，一般不手动调用） |
+| `node dist/index.js --no-mcp` | 本地调试（单进程，不写状态文件） |
