@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "canvas": {
+      "command": "node",
+      "args": ["./packages/bridge-server/dist/index.js"]
+    }
+  }
+}

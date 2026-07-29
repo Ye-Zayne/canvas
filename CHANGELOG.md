@@ -9,6 +9,12 @@
 
 ### 新增
 
+- **Codex plugin 一句话安装**：仓库新增标准
+  `.codex-plugin/plugin.json`、`.mcp.json` 与 marketplace 清单。
+  插件内置已打包的 MCP server 和画布前端，安装后无需再执行
+  `pnpm install`、构建或手动修改 `config.toml`。
+- 新增 `stable` 发布流：`main` 的 push CI 全部通过后，自动将对应的已测试提交
+  快进到 `stable` 分支，供 plugin marketplace 固定安装。
 - **项目级 daemon**：画布服务不再依赖某个对话存活。
   客户端退出只会结束轻量的 MCP 进程，daemon 与画布数据不受影响。
   - MCP 进程改为无状态，所有画布操作经 HTTP 转给 daemon；

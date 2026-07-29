@@ -38,7 +38,28 @@ codex / claude code
 
 ## 快速开始
 
+### Codex plugin 一句话安装（推荐）
+
+直接对 Codex 说：
+
+> 帮我从 stable 分支安装这个 Codex plugin：https://github.com/Ye-Zayne/canvas.git
+
+Codex 会添加仓库 marketplace 并安装 `ai-canvas` plugin。等安装完成后，
+新建一个任务，再说「打开画布」即可。
+
+对应的手动命令是：
+
+```bash
+codex plugin marketplace add https://github.com/Ye-Zayne/canvas.git --ref stable
+codex plugin add ai-canvas@ai-canvas
+```
+
+插件已经内置可直接运行的 MCP server 与画布前端；不需要克隆仓库、
+运行 `pnpm install`、手动构建或修改 `~/.codex/config.toml`。
+
 ### 一键安装（推荐）
+
+以下脚本方式同时支持 Codex 与 Claude Code：
 
 ```bash
 cd ai-canvas

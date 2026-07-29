@@ -8,5 +8,15 @@ packages/*/node_modules
 packages/*/dist
 release/
 
+# Codex marketplace installs only plugins/ai-canvas, so its prebuilt runtime
+# must be versioned even though normal package build outputs are ignored.
+!plugins/ai-canvas/packages/
+!plugins/ai-canvas/packages/bridge-server/
+!plugins/ai-canvas/packages/bridge-server/dist/
+!plugins/ai-canvas/packages/bridge-server/dist/**
+!plugins/ai-canvas/packages/canvas-web/
+!plugins/ai-canvas/packages/canvas-web/dist/
+!plugins/ai-canvas/packages/canvas-web/dist/**
+
 # 画布数据（跟随各自项目，不入库）
 .aicanvas/
