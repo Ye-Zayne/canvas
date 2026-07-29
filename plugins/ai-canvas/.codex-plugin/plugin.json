@@ -1,0 +1,28 @@
+{
+  "name": "ai-canvas",
+  "version": "0.5.0",
+  "description": "A local, persistent AI creation canvas for Codex.",
+  "author": {
+    "name": "Ye Zayne",
+    "url": "https://github.com/Ye-Zayne"
+  },
+  "homepage": "https://github.com/Ye-Zayne/canvas",
+  "repository": "https://github.com/Ye-Zayne/canvas",
+  "license": "MIT",
+  "keywords": ["canvas", "creative", "media", "mcp"],
+  "interface": {
+    "displayName": "AI Canvas",
+    "shortDescription": "Create with Codex on a persistent local canvas.",
+    "longDescription": "Send text and local media from Codex to a persistent visual canvas, arrange and connect cards, then bring selected content back into the conversation.",
+    "developerName": "Ye Zayne",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "websiteURL": "https://github.com/Ye-Zayne/canvas",
+    "defaultPrompt": [
+      "Open my AI Canvas.",
+      "Put this content on the canvas.",
+      "List the cards currently on my canvas."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}
