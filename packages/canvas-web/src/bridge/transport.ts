@@ -6,7 +6,7 @@
  *
  * App.tsx 只依赖 CanvasTransport 接口，不关心底层是 WS 还是 MCP Apps。
  */
-import type { CanvasNode, ClientEnv } from '@/lib/types';
+import type { CanvasEdge, CanvasNode, ClientEnv, NodeLayout, Viewport } from '@/lib/types';
 
 export type ConnStatus = 'connecting' | 'open' | 'closed';
 
@@ -16,7 +16,7 @@ export interface TransportHandlers {
   onUpdate: (id: string, patch: Partial<CanvasNode>) => void;
   onRemove: (id: string) => void;
   onClear: () => void;
-  onSnapshot: (nodes: CanvasNode[]) => void;
+  onSnapshot: (nodes: CanvasNode[], edges?: CanvasEdge[], viewport?: Viewport) => void;
   /** 服务端下发的客户端环境信息 */
   onClientEnv?: (env: ClientEnv) => void;
   /** 连接状态变化 */
@@ -29,6 +29,12 @@ export interface CanvasTransport {
   connect(handlers: TransportHandlers): () => void;
   /** 将选中节点入队，供 Agent 通过 /canvas-pull 拉取 */
   enqueue(nodes: CanvasNode[]): void;
+  /** 上报节点位置/尺寸变化，由服务端持久化 */
+  reportLayouts?(layouts: Record<string, NodeLayout>): void;
+  /** 上报视口变化 */
+  reportViewport?(viewport: Viewport): void;
+  /** 上报连线变化（全量） */
+  reportEdges?(edges: CanvasEdge[]): void;
   /**
    * 内嵌模式专属：直接把内容发回当前对话（无需队列）。
    * 浏览器模式不实现此方法。

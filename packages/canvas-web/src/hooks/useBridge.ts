@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CanvasNode, ClientEnv } from '@/lib/types';
+import type { CanvasEdge, CanvasNode, ClientEnv, NodeLayout, Viewport } from '@/lib/types';
 import type { CanvasTransport, ConnStatus } from '@/bridge/transport';
 import { createTransport } from '@/bridge/createTransport';
 
@@ -10,7 +10,7 @@ interface UseBridgeOptions {
   onUpdate: (id: string, patch: Partial<CanvasNode>) => void;
   onRemove: (id: string) => void;
   onClear: () => void;
-  onSnapshot: (nodes: CanvasNode[]) => void;
+  onSnapshot: (nodes: CanvasNode[], edges?: CanvasEdge[], viewport?: Viewport) => void;
 }
 
 /** 未探测到客户端时的兜底信息 */
@@ -39,7 +39,7 @@ export function useBridge(opts: UseBridgeOptions) {
       onUpdate: (id, patch) => optsRef.current.onUpdate(id, patch),
       onRemove: (id) => optsRef.current.onRemove(id),
       onClear: () => optsRef.current.onClear(),
-      onSnapshot: (nodes) => optsRef.current.onSnapshot(nodes),
+      onSnapshot: (nodes, edges, viewport) => optsRef.current.onSnapshot(nodes, edges, viewport),
       onClientEnv: setClientEnv,
       onStatus: setStatus,
     });
@@ -47,6 +47,22 @@ export function useBridge(opts: UseBridgeOptions) {
   }, [transport]);
 
   const enqueue = useCallback((nodes: CanvasNode[]) => transport.enqueue(nodes), [transport]);
+
+  /** 上报节点位置/尺寸，由服务端持久化 */
+  const reportLayouts = useCallback(
+    (layouts: Record<string, NodeLayout>) => transport.reportLayouts?.(layouts),
+    [transport]
+  );
+
+  const reportViewport = useCallback(
+    (viewport: Viewport) => transport.reportViewport?.(viewport),
+    [transport]
+  );
+
+  const reportEdges = useCallback(
+    (edges: CanvasEdge[]) => transport.reportEdges?.(edges),
+    [transport]
+  );
 
   /** 内嵌模式：直接发回对话；不支持时返回 false 由调用方走队列 */
   const sendToChat = useCallback(
@@ -66,6 +82,9 @@ export function useBridge(opts: UseBridgeOptions) {
     status,
     enqueue,
     sendToChat,
+    reportLayouts,
+    reportViewport,
+    reportEdges,
     clientEnv,
     /** 是否内嵌在客户端内（可直接发回对话） */
     embedded: transport.mode === 'mcp-app',

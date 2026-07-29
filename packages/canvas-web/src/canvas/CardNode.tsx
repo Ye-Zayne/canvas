@@ -5,7 +5,18 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Handle, Position, NodeResizer, type NodeProps } from '@xyflow/react';
-import { FileText, ImageIcon, Video, Music, File, Plus, Download, Send, Check } from 'lucide-react';
+import {
+  FileText,
+  ImageIcon,
+  Video,
+  Music,
+  File,
+  Plus,
+  Download,
+  Send,
+  Check,
+  AlertTriangle,
+} from 'lucide-react';
 import { useCanvasMode, actionLabel } from '@/lib/mode';
 import type { NodeKind } from '@/lib/types';
 
@@ -25,7 +36,11 @@ export interface CardNodeData extends Record<string, unknown> {
   title: string;
   content: string;
   assetUrl: string;
+  /** 素材原始路径，断链时展示给用户定位 */
+  sourcePath: string;
   mime: string;
+  /** 素材文件已丢失 */
+  missing: boolean;
 }
 
 /** 触发「加入对话」：通过 window 事件与 App 解耦 */
@@ -34,7 +49,8 @@ function emitEnqueue(nodeId: string) {
 }
 
 export function CardNode({ data, selected }: NodeProps) {
-  const { kind, title, content, assetUrl, mime, nodeId } = data as CardNodeData;
+  const { kind, title, content, assetUrl, sourcePath, mime, missing, nodeId } =
+    data as CardNodeData;
   const [added, setAdded] = useState(false);
   const { embedded } = useCanvasMode();
   const label = actionLabel(embedded);
@@ -77,7 +93,11 @@ export function CardNode({ data, selected }: NodeProps) {
 
         {/* 内容区：nodrag/nowheel 保证内部可滚动与交互 */}
         <div className="nodrag nowheel min-h-0 flex-1 overflow-auto">
-          <Content kind={kind} content={content} assetUrl={assetUrl} mime={mime} title={title} />
+          {missing ? (
+            <MissingAsset nodeId={nodeId} sourcePath={sourcePath} />
+          ) : (
+            <Content kind={kind} content={content} assetUrl={assetUrl} mime={mime} title={title} />
+          )}
         </div>
       </div>
     </>
@@ -93,6 +113,97 @@ function defaultTitle(kind: NodeKind): string {
     audio: '音频',
     file: '文件',
   }[kind];
+}
+
+/**
+ * 素材已丢失的占位。
+ * 原则：绝不静默空白或报错——显示原始路径便于定位，并提供重新指定入口。
+ */
+function MissingAsset({ nodeId, sourcePath }: { nodeId: string; sourcePath: string }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(sourcePath);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function submit() {
+    const next = value.trim();
+    if (!next) return;
+    setBusy(true);
+    setErr('');
+    try {
+      const res = await fetch(`/api/nodes/${nodeId}/relink`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: next }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const node = await res.json();
+      if (node.missing) {
+        setErr('新路径同样不存在');
+      } else {
+        setEditing(false);
+      }
+    } catch (e) {
+      setErr((e as Error).message || '修复失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-2 p-3 text-center">
+      <AlertTriangle className="text-amber-500" size={26} />
+      <div className="text-xs font-medium text-amber-600 dark:text-amber-400">素材已丢失</div>
+      <div
+        className="w-full break-all text-[10px] leading-snug text-muted-foreground"
+        title={sourcePath}
+      >
+        {sourcePath || '(无路径记录)'}
+      </div>
+
+      {editing ? (
+        <div className="w-full space-y-1">
+          <input
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void submit();
+              if (e.key === 'Escape') setEditing(false);
+            }}
+            placeholder="输入新的文件路径"
+            className="w-full rounded border border-border bg-background px-1.5 py-1 text-[11px] outline-none focus:border-primary"
+            autoFocus
+          />
+          <div className="flex gap-1">
+            <button
+              disabled={busy}
+              onClick={() => void submit()}
+              className="flex-1 rounded bg-primary px-2 py-1 text-[11px] text-primary-foreground disabled:opacity-50"
+            >
+              {busy ? '修复中…' : '确认'}
+            </button>
+            <button
+              onClick={() => setEditing(false)}
+              className="rounded bg-secondary px-2 py-1 text-[11px] hover:bg-secondary/80"
+            >
+              取消
+            </button>
+          </div>
+          {err && <div className="text-[10px] text-destructive">{err}</div>}
+        </div>
+      ) : (
+        <button
+          onClick={() => {
+            setValue(sourcePath);
+            setEditing(true);
+          }}
+          className="rounded bg-secondary px-2 py-1 text-[11px] hover:bg-secondary/80"
+        >
+          重新指定路径
+        </button>
+      )}
+    </div>
+  );
 }
 
 function Content({

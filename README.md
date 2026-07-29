@@ -152,6 +152,7 @@ args = ["<绝对路径>/ai-canvas/packages/bridge-server/dist/index.js"]
 | `canvas_add_media` | 推送视频 / 音频 |
 | `canvas_add_file` | 推送任意文件卡片（可下载） |
 | `canvas_list` | 列出画布上所有卡片摘要 |
+| `canvas_relink` | 修复素材已丢失的卡片（重新指向新路径） |
 | `canvas_pull` | 取出用户「加入对话」的内容（出队） |
 | `canvas_enqueue` | 内嵌画布内部调用：把选中卡片入队（一般不由用户直接触发） |
 
@@ -182,28 +183,63 @@ ai-canvas/
    ├─ canvas-web/            # 前端画布
    │  └─ src/
    │     ├─ App.tsx
-   │     ├─ canvas/CanvasBoard.tsx
-   │     ├─ canvas/shapes/{CanvasCardShape,CardBody}.tsx
+   │     ├─ canvas/CanvasBoard.tsx    # React Flow 画布
+   │     ├─ canvas/CardNode.tsx       # 卡片节点（含断链占位）
+   │     ├─ bridge/                   # 通信适配层
    │     ├─ components/{Toolbar,QueueDrawer}.tsx
-   │     ├─ components/ui/{button,badge,sheet}.tsx
    │     ├─ hooks/useBridge.ts
-   │     └─ lib/{types,utils}.ts
+   │     └─ lib/{types,mode,utils}.ts
    └─ bridge-server/         # MCP + WS + REST
       └─ src/
          ├─ index.ts         # 入口
          ├─ mcp.ts           # MCP tools/prompts/resources
          ├─ ws.ts            # WebSocket 广播
-         ├─ store.ts         # 状态 + 拉取队列
+         ├─ store.ts         # 内存状态 + 拉取队列
+         ├─ canvas-service.ts # 加载/落盘/素材重注册
+         ├─ persist.ts       # .aicanvas/canvas.json 读写（原子+防抖）
+         ├─ project.ts       # 项目根目录解析
          ├─ assets.ts        # 本地文件代理
          ├─ config.ts
          └─ types.ts
 ```
 
+## 数据与持久化
+
+画布内容保存在**项目目录**下，随项目走：
+
+```
+<项目根>/.aicanvas/canvas.json
+```
+
+保存的内容：节点、连线、**每张卡片的位置与尺寸**、**视口（缩放与平移）**。
+刷新页面或重启服务后，画布会完全恢复到上次的样子。
+
+> 项目根默认为**服务启动时的工作目录**，可用环境变量 `CANVAS_PROJECT_DIR` 指定。
+
+### 素材只存路径，不复制文件
+
+`canvas.json` 里只保存素材的**原始磁盘路径**，不把图片视频拷进项目。
+
+| 优点 | 代价 |
+| --- | --- |
+| 不占额外空间（视频往往很大） | 源文件被移动或删除会**断链** |
+| 修改源文件即时生效 | 画布不能整体搬到其他机器 |
+
+**断链后不会默默变空白**：卡片会显示「素材已丢失」占位、列出原始路径，
+并提供「重新指定路径」就地修复（也可让 Agent 调 `canvas_relink`）。
+
+### 安全保障
+
+- **原子写入**：先写临时文件再重命名，中断不会产生损坏文件。
+- **防抖 500ms**：拖动过程不会高频写盘；退出前强制落盘。
+- **损坏容错**：文件非法时**保留原文件**并报可恢复错误（见 `/api/health` 的
+  `loadError`），**绝不清空你的画布**。
+
 ## 说明与约束
 
 - **本地文件访问**：浏览器不能直接读磁盘，本地媒体统一经 bridge-server 的 `/assets/:id` 代理（支持 Range，视频可拖动进度）。
 - **大文件**：优先传路径而非 base64，避免 MCP 消息体过大。
-- **单画布**：MVP 为单用户单画布内存状态；持久化（保存/恢复）可后续扩展。
+- **单画布**：当前为单项目单画布（多 Page 尚未支持）。
 - **端口**：默认 `4399`，用 `CANVAS_PORT` 覆盖。
 
 ## 调试（不接 Agent 也能测）

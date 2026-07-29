@@ -2,7 +2,7 @@
  * WsTransport：浏览器模式的传输实现。
  * 封装原 useBridge 的 WebSocket 连接 / 重连 / 消息分发逻辑。
  */
-import type { CanvasNode, PushMsg, ReportMsg } from '@/lib/types';
+import type { CanvasEdge, CanvasNode, NodeLayout, PushMsg, ReportMsg, Viewport } from '@/lib/types';
 import type { CanvasTransport, ConnStatus, TransportHandlers } from './transport';
 
 export class WsTransport implements CanvasTransport {
@@ -66,7 +66,7 @@ export class WsTransport implements CanvasTransport {
           h.onClear();
           break;
         case 'snapshot':
-          h.onSnapshot(msg.nodes);
+          h.onSnapshot(msg.nodes, msg.edges, msg.viewport);
           break;
         case 'client_env':
           h.onClientEnv?.(msg.env);
@@ -87,9 +87,25 @@ export class WsTransport implements CanvasTransport {
   }
 
   enqueue(nodes: CanvasNode[]): void {
+    this.send({ type: 'selection_enqueue', nodes });
+  }
+
+  reportLayouts(layouts: Record<string, NodeLayout>): void {
+    this.send({ type: 'layout_update', layouts });
+  }
+
+  reportViewport(viewport: Viewport): void {
+    this.send({ type: 'viewport_update', viewport });
+  }
+
+  reportEdges(edges: CanvasEdge[]): void {
+    this.send({ type: 'edges_update', edges });
+  }
+
+  private send(msg: ReportMsg): void {
     const ws = this.ws;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'selection_enqueue', nodes } satisfies ReportMsg));
+      ws.send(JSON.stringify(msg));
     }
   }
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ReactFlowProvider } from '@xyflow/react';
+import { ReactFlowProvider, type Edge } from '@xyflow/react';
 import { toast, Toaster } from 'sonner';
 import { Send, Plus } from 'lucide-react';
 import { CanvasBoard, toFlowNode, type CardFlowNode } from './canvas/CanvasBoard';
@@ -8,45 +8,117 @@ import { Toolbar } from './components/Toolbar';
 import { QueueDrawer } from './components/QueueDrawer';
 import { Button } from './components/ui/button';
 import { CanvasModeContext, actionLabel } from './lib/mode';
-import type { CanvasNode } from './lib/types';
+import type { CanvasEdge, CanvasNode, NodeLayout, Viewport } from './lib/types';
 
 export default function App() {
   // React Flow 节点（画布可视状态）
   const [flowNodes, setFlowNodes] = useState<CardFlowNode[]>([]);
+  const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
   // 节点索引：nodeId -> CanvasNode，作为拉取队列与元数据来源
   const nodesRef = useRef<Map<string, CanvasNode>>(new Map());
+  // 最新的 flowNodes 引用，供落盘时读取当前布局
+  const flowNodesRef = useRef<CardFlowNode[]>([]);
+  flowNodesRef.current = flowNodes;
   const [queue, setQueue] = useState<CanvasNode[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [nodeCount, setNodeCount] = useState(0);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // 从服务端恢复的视口，仅首次快照时设定
+  const [initialViewport, setInitialViewport] = useState<Viewport | undefined>();
+  const viewportRestored = useRef(false);
 
-  const applyAdd = useCallback((node: CanvasNode) => {
-    const isNew = !nodesRef.current.has(node.id);
-    nodesRef.current.set(node.id, node);
-    setNodeCount(nodesRef.current.size);
+  // 事件处理函数的 ref 容器：useBridge 需在这些函数定义之前调用
+  const applyAddRef = useRef<(n: CanvasNode) => void>(() => {});
+  const applySnapshotRef = useRef<(n: CanvasNode[], e?: CanvasEdge[], v?: Viewport) => void>(
+    () => {}
+  );
+  const applyRemoveRef = useRef<(id: string) => void>(() => {});
+  const applyClearRef = useRef<() => void>(() => {});
 
-    setFlowNodes((cur) => {
-      const idx = cur.findIndex((n) => n.id === node.id);
-      if (idx >= 0) {
-        // 已存在：只更新数据，保留位置与尺寸
-        const next = [...cur];
-        const fresh = toFlowNode(node, idx);
-        next[idx] = { ...next[idx], data: fresh.data };
-        return next;
+  const {
+    status,
+    enqueue,
+    sendToChat,
+    reportLayouts,
+    reportViewport,
+    reportEdges,
+    clientEnv,
+    embedded,
+  } = useBridge({
+    onAdd: (node) => applyAddRef.current(node),
+    onUpdate: (id, patch) => {
+      const cur = nodesRef.current.get(id);
+      if (cur) applyAddRef.current({ ...cur, ...patch });
+    },
+    onRemove: (id) => applyRemoveRef.current(id),
+    onClear: () => applyClearRef.current(),
+    onSnapshot: (nodes, edges, viewport) => applySnapshotRef.current(nodes, edges, viewport),
+  });
+
+  // 上报函数放进 ref，供下方回调使用，避免声明顺序造成的循环依赖
+  const reportLayoutsRef = useRef(reportLayouts);
+  reportLayoutsRef.current = reportLayouts;
+
+  /**
+   * 把当前画布上的位置/尺寸全量上报，由服务端持久化。
+   * 延后一帧执行，确保读到 React 已提交的最新布局。
+   */
+  const commitLayouts = useCallback(() => {
+    setTimeout(() => {
+      const layouts: Record<string, NodeLayout> = {};
+      for (const n of flowNodesRef.current) {
+        layouts[n.id] = {
+          position: { x: n.position.x, y: n.position.y },
+          size: n.width && n.height ? { width: n.width, height: n.height } : undefined,
+        };
       }
-      return [...cur, toFlowNode(node, cur.length)];
-    });
-
-    if (isNew) {
-      toast('新内容已加入画布', { description: node.title });
-    }
+      reportLayoutsRef.current(layouts);
+    }, 0);
   }, []);
 
-  const applySnapshot = useCallback((incoming: CanvasNode[]) => {
-    nodesRef.current = new Map(incoming.map((n) => [n.id, n]));
-    setNodeCount(nodesRef.current.size);
-    setFlowNodes(incoming.map((n, i) => toFlowNode(n, i)));
-  }, []);
+  const applyAdd = useCallback(
+    (node: CanvasNode) => {
+      const isNew = !nodesRef.current.has(node.id);
+      nodesRef.current.set(node.id, node);
+      setNodeCount(nodesRef.current.size);
+
+      setFlowNodes((cur) => {
+        const idx = cur.findIndex((n) => n.id === node.id);
+        if (idx >= 0) {
+          // 已存在：只更新数据，保留用户调整过的位置与尺寸
+          const next = [...cur];
+          next[idx] = { ...next[idx], data: toFlowNode(node, idx).data };
+          return next;
+        }
+        return [...cur, toFlowNode(node, cur.length)];
+      });
+
+      if (isNew) {
+        toast('新内容已加入画布', { description: node.title });
+        // 新节点由前端自动落位，需立即回写，否则刷新后位置会重算
+        setTimeout(commitLayouts, 0);
+      }
+    },
+    [commitLayouts]
+  );
+
+  const applySnapshot = useCallback(
+    (incoming: CanvasNode[], edges?: CanvasEdge[], viewport?: Viewport) => {
+      nodesRef.current = new Map(incoming.map((n) => [n.id, n]));
+      setNodeCount(nodesRef.current.size);
+      setFlowNodes(incoming.map((n, i) => toFlowNode(n, i)));
+      setFlowEdges((edges ?? []).map((e) => ({ id: e.id, source: e.source, target: e.target })));
+      if (viewport && !viewportRestored.current) {
+        viewportRestored.current = true;
+        setInitialViewport(viewport);
+      }
+      // 首次加载中若存在无持久位置的节点，自动落位后回写
+      if (incoming.some((n) => !n.layout)) {
+        setTimeout(commitLayouts, 0);
+      }
+    },
+    [commitLayouts]
+  );
 
   const applyRemove = useCallback((id: string) => {
     nodesRef.current.delete(id);
@@ -58,18 +130,26 @@ export default function App() {
     nodesRef.current.clear();
     setNodeCount(0);
     setFlowNodes([]);
+    setFlowEdges([]);
   }, []);
 
-  const { status, enqueue, sendToChat, clientEnv, embedded } = useBridge({
-    onAdd: applyAdd,
-    onUpdate: (id, patch) => {
-      const cur = nodesRef.current.get(id);
-      if (cur) applyAdd({ ...cur, ...patch });
+  // 连线变化后同步到服务端（全量覆盖）
+  const handleEdgesChange = useCallback(
+    (updater: React.SetStateAction<Edge[]>) => {
+      setFlowEdges((cur) => {
+        const next = typeof updater === 'function' ? updater(cur) : updater;
+        reportEdges(next.map((e) => ({ id: e.id, source: e.source, target: e.target })));
+        return next;
+      });
     },
-    onRemove: applyRemove,
-    onClear: applyClear,
-    onSnapshot: applySnapshot,
-  });
+    [reportEdges]
+  );
+
+  // 把回调放进 ref 交给 useBridge，避免 hook 声明顺序限制
+  applyAddRef.current = applyAdd;
+  applySnapshotRef.current = applySnapshot;
+  applyRemoveRef.current = applyRemove;
+  applyClearRef.current = applyClear;
 
   const mode = useMemo(() => ({ embedded, clientEnv }), [embedded, clientEnv]);
 
@@ -135,8 +215,13 @@ export default function App() {
           <ReactFlowProvider>
             <CanvasBoard
               nodes={flowNodes}
+              edges={flowEdges}
               onNodesChangeExternal={setFlowNodes}
+              onEdgesChangeExternal={handleEdgesChange}
               onSelectionChange={setSelectedIds}
+              onLayoutCommit={commitLayouts}
+              onViewportChange={reportViewport}
+              defaultViewport={initialViewport}
             />
           </ReactFlowProvider>
         </div>

@@ -19,6 +19,16 @@ import { store } from './store.js';
 import { broadcast, initWebSocket, clientCount } from './ws.js';
 import { serveAsset } from './assets.js';
 import { getClientEnv } from './client-env.js';
+import {
+  initCanvas,
+  persist,
+  flush,
+  hydratedNodes,
+  hydrateNode,
+  relinkNode,
+  getLoadError,
+} from './canvas-service.js';
+import { docPath } from './project.js';
 import { startMcp } from './mcp.js';
 
 const log = (...a: unknown[]) => console.error('[bridge]', ...a);
@@ -34,21 +44,45 @@ function createHttpServer() {
 
   // REST 调试接口：直接推送节点（不经 MCP，便于本地测试）
   app.post('/api/nodes', (req, res) => {
-    const node = store.addNode(req.body);
+    const node = hydrateNode(store.addNode(req.body));
     broadcast({ type: 'add_node', node });
+    persist();
     res.json(node);
   });
-  app.get('/api/nodes', (_req, res) => res.json(store.listNodes()));
+  app.get('/api/nodes', (_req, res) => res.json(hydratedNodes()));
   app.post('/api/clear', (_req, res) => {
     store.clear();
     broadcast({ type: 'clear' });
+    persist();
     res.json({ ok: true });
+  });
+
+  // 修复断链：把节点素材重新指向新路径
+  app.post('/api/nodes/:id/relink', (req, res) => {
+    const { path: newPath } = req.body ?? {};
+    if (typeof newPath !== 'string' || !newPath.trim()) {
+      res.status(400).json({ error: '缺少 path' });
+      return;
+    }
+    const node = relinkNode(req.params.id, newPath);
+    if (!node) {
+      res.status(404).json({ error: '节点不存在' });
+      return;
+    }
+    broadcast({ type: 'update_node', id: node.id, patch: node });
+    res.json(node);
   });
   app.get('/api/queue', (_req, res) => res.json(store.peekQueue()));
   // 客户端环境（前端据此切换交互与文案）
   app.get('/api/client', (_req, res) => res.json(getClientEnv()));
   app.get('/api/health', (_req, res) =>
-    res.json({ ok: true, clients: clientCount(), nodes: store.listNodes().length })
+    res.json({
+      ok: true,
+      clients: clientCount(),
+      nodes: store.listNodes().length,
+      dataFile: docPath(),
+      loadError: getLoadError(),
+    })
   );
 
   // 静态托管前端打包产物（若已 build）
@@ -74,6 +108,9 @@ function createHttpServer() {
 async function main() {
   const noMcp = process.argv.includes('--no-mcp');
 
+  // 先从磁盘恢复画布（含素材重注册与断链检测）
+  initCanvas();
+
   const server = createHttpServer();
   initWebSocket(server);
 
@@ -81,6 +118,15 @@ async function main() {
     server.listen(config.port, config.host, resolve);
   });
   log(`HTTP + WS listening at ${canvasUrl()}`);
+
+  // 退出前把挂起的变更落盘，避免丢失最后一次拖动
+  const shutdown = () => {
+    flush();
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+  process.on('beforeExit', () => flush());
 
   if (!noMcp) {
     await startMcp();

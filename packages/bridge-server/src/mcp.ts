@@ -11,6 +11,7 @@ import { store } from './store.js';
 import { broadcast } from './ws.js';
 import { toAssetUrl } from './assets.js';
 import { canvasUrl } from './config.js';
+import { persist, hydrateNode, relinkNode } from './canvas-service.js';
 import type { CanvasNode } from './types.js';
 
 /** MCP Apps 内嵌画布的 UI 资源 URI */
@@ -42,10 +43,11 @@ function embedShellHtml(): string {
 
 const log = (...a: unknown[]) => console.error('[mcp]', ...a);
 
-/** 把节点加入 store 并广播到画布 */
+/** 把节点加入 store 并广播到画布，同时请求落盘 */
 function pushNode(partial: Omit<CanvasNode, 'id' | 'createdAt'>): CanvasNode {
-  const node = store.addNode(partial);
+  const node = hydrateNode(store.addNode(partial));
   broadcast({ type: 'add_node', node });
+  persist();
   return node;
 }
 
@@ -56,7 +58,9 @@ function formatNodes(nodes: CanvasNode[]): string {
     .map((n, i) => {
       const head = `${i + 1}. [${n.kind}] ${n.title ?? '(无标题)'}`;
       if (n.content) return `${head}\n${n.content}`;
+      if (n.missing) return `${head}\n素材已丢失（原路径：${n.sourcePath}）`;
       if (n.assetUrl) return `${head}\n资源: ${n.assetUrl}`;
+      if (n.sourcePath) return `${head}\n资源: ${n.sourcePath}`;
       return head;
     })
     .join('\n\n');
@@ -120,8 +124,8 @@ export function createMcpServer(): McpServer {
       title: z.string().optional(),
     },
     async ({ url, title }) => {
-      const { url: assetUrl, mime } = toAssetUrl(url);
-      const node = pushNode({ kind: 'image', title, assetUrl, mime });
+      const { mime } = toAssetUrl(url);
+      const node = pushNode({ kind: 'image', title, sourcePath: url, mime });
       return { content: [{ type: 'text', text: `已推送图片到画布（id=${node.id}）` }] };
     }
   );
@@ -135,8 +139,8 @@ export function createMcpServer(): McpServer {
       title: z.string().optional(),
     },
     async ({ kind, url, title }) => {
-      const { url: assetUrl, mime } = toAssetUrl(url);
-      const node = pushNode({ kind, title, assetUrl, mime });
+      const { mime } = toAssetUrl(url);
+      const node = pushNode({ kind, title, sourcePath: url, mime });
       return { content: [{ type: 'text', text: `已推送${kind}到画布（id=${node.id}）` }] };
     }
   );
@@ -149,11 +153,11 @@ export function createMcpServer(): McpServer {
       title: z.string().optional(),
     },
     async ({ path: p, title }) => {
-      const { url: assetUrl, mime } = toAssetUrl(p);
+      const { mime } = toAssetUrl(p);
       const node = pushNode({
         kind: 'file',
         title: title ?? p.split('/').pop(),
-        assetUrl,
+        sourcePath: p,
         mime,
         meta: { source: p },
       });
@@ -162,8 +166,26 @@ export function createMcpServer(): McpServer {
   );
 
   server.tool('canvas_list', '列出画布上当前所有组件的摘要。', {}, async () => ({
-    content: [{ type: 'text', text: formatNodes(store.listNodes()) }],
+    content: [{ type: 'text', text: formatNodes(store.listNodes().map(hydrateNode)) }],
   }));
+
+  server.tool(
+    'canvas_relink',
+    '修复画布上素材已丢失的卡片：把它重新指向新的文件路径。',
+    {
+      id: z.string().describe('卡片的节点 id'),
+      path: z.string().describe('新的本地文件路径或 URL'),
+    },
+    async ({ id, path: p }) => {
+      const node = relinkNode(id, p);
+      if (!node) {
+        return { content: [{ type: 'text', text: `未找到节点 ${id}` }] };
+      }
+      broadcast({ type: 'update_node', id, patch: node });
+      const text = node.missing ? `已更新路径，但新路径仍不存在：${p}` : `已修复素材指向：${p}`;
+      return { content: [{ type: 'text', text }] };
+    }
+  );
 
   // 内嵌模式：画布 iframe 通过 tools/call 调此工具把选中项入队（等价浏览器的 selection_enqueue）
   server.tool(

@@ -7,3 +7,6 @@ dist
 packages/*/node_modules
 packages/*/dist
 release/
+
+# 画布数据（跟随各自项目，不入库）
+.aicanvas/
