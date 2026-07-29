@@ -1,12 +1,14 @@
 /**
- * bridge-server 入口：
- *  - 启动 HTTP（express）：静态托管画布前端 + /assets 代理 + REST 调试接口
- *  - 启动 WebSocket：与浏览器画布双向通信
- *  - 启动 MCP（stdio）：被 codex / claude code 连接
+ * bridge-server 入口，三种运行模式：
  *
- * 用法：
- *   node dist/index.js            # 同时启动 HTTP+WS+MCP（供 Agent 客户端 spawn）
- *   node dist/index.js --no-mcp   # 仅 HTTP+WS（本地开发调试画布用）
+ *   node dist/index.js            默认：MCP 模式。被客户端 spawn，
+ *                                 自身只做 MCP 协议，画布状态托管在 daemon。
+ *   node dist/index.js --daemon   daemon 模式：纯服务（HTTP + WS + 持久化），
+ *                                 detached 运行，不随客户端退出。
+ *   node dist/index.js --no-mcp   本地调试：单进程 HTTP + WS，不写状态文件。
+ *
+ * 拆分 MCP 与 daemon 的原因：客户端退出只会结束 MCP 进程，
+ * daemon 与画布数据不受影响。
  */
 import http from 'node:http';
 import path from 'node:path';
@@ -14,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import express from 'express';
 import cors from 'cors';
-import { config, canvasUrl } from './config.js';
+import { config, canvasUrl, setActualPort } from './config.js';
 import { store } from './store.js';
 import { broadcast, initWebSocket, clientCount } from './ws.js';
 import { serveAsset } from './assets.js';
@@ -28,8 +30,10 @@ import {
   relinkNode,
   getLoadError,
 } from './canvas-service.js';
-import { docPath } from './project.js';
+import { docPath, projectRoot } from './project.js';
+import { clearState, pickPort, writeState, logFile } from './daemon-state.js';
 import { startMcp } from './mcp.js';
+import type { CanvasNode } from './types.js';
 
 const log = (...a: unknown[]) => console.error('[bridge]', ...a);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -42,7 +46,7 @@ function createHttpServer() {
   // 本地资产代理
   app.get('/assets/:id', serveAsset);
 
-  // REST 调试接口：直接推送节点（不经 MCP，便于本地测试）
+  // ---- 画布节点 ----
   app.post('/api/nodes', (req, res) => {
     const node = hydrateNode(store.addNode(req.body));
     broadcast({ type: 'add_node', node });
@@ -72,12 +76,32 @@ function createHttpServer() {
     broadcast({ type: 'update_node', id: node.id, patch: node });
     res.json(node);
   });
+
+  app.get('/api/edges', (_req, res) => res.json(store.listEdges()));
+
+  // ---- 拉取队列 ----
   app.get('/api/queue', (_req, res) => res.json(store.peekQueue()));
+  app.post('/api/queue', (req, res) => {
+    const { nodes } = req.body ?? {};
+    if (!Array.isArray(nodes)) {
+      res.status(400).json({ error: '缺少 nodes' });
+      return;
+    }
+    store.enqueue(nodes as CanvasNode[]);
+    res.json({ ok: true });
+  });
+  app.post('/api/queue/drain', (_req, res) => res.json(store.drainQueue()));
+
   // 客户端环境（前端据此切换交互与文案）
   app.get('/api/client', (_req, res) => res.json(getClientEnv()));
+
   app.get('/api/health', (_req, res) =>
     res.json({
       ok: true,
+      // projectRoot 用于 daemon 复用判定：pid 可能被系统复用，必须叠加此校验
+      projectRoot: projectRoot(),
+      pid: process.pid,
+      port: config.port,
       clients: clientCount(),
       nodes: store.listNodes().length,
       dataFile: docPath(),
@@ -105,34 +129,75 @@ function createHttpServer() {
   return http.createServer(app);
 }
 
-async function main() {
-  const noMcp = process.argv.includes('--no-mcp');
+/**
+ * 启动画布服务（HTTP + WS + 持久化）。
+ * @param registerState 是否写 daemon 状态文件（--no-mcp 调试模式不写，避免污染）
+ */
+async function startService(registerState: boolean): Promise<void> {
+  const root = projectRoot();
 
   // 先从磁盘恢复画布（含素材重注册与断链检测）
   initCanvas();
+
+  const port = await pickPort(config.port, config.host);
+  if (port !== config.port) {
+    log(`偏好端口 ${config.port} 被占用，改用 ${port}`);
+  }
+  setActualPort(port);
 
   const server = createHttpServer();
   initWebSocket(server);
 
   await new Promise<void>((resolve) => {
-    server.listen(config.port, config.host, resolve);
+    server.listen(port, config.host, resolve);
   });
   log(`HTTP + WS listening at ${canvasUrl()}`);
 
-  // 退出前把挂起的变更落盘，避免丢失最后一次拖动
+  if (registerState) {
+    writeState({
+      projectRoot: root,
+      pid: process.pid,
+      port,
+      host: config.host,
+      startedAt: Date.now(),
+      logFile: logFile(root),
+    });
+    log(`项目：${root}`);
+  }
+
+  // 退出前落盘并清理状态文件，避免留下僵尸记录
+  let closing = false;
   const shutdown = () => {
+    if (closing) return;
+    closing = true;
     flush();
+    if (registerState) clearState(root);
     process.exit(0);
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+  process.on('SIGHUP', shutdown);
   process.on('beforeExit', () => flush());
+}
 
-  if (!noMcp) {
-    await startMcp();
-  } else {
-    log('MCP disabled (--no-mcp)');
+async function main() {
+  const argv = process.argv;
+
+  if (argv.includes('--daemon')) {
+    // 纯服务模式：由 MCP 进程 detached 拉起
+    await startService(true);
+    return;
   }
+
+  if (argv.includes('--no-mcp')) {
+    // 本地调试：单进程，不注册 daemon 状态
+    await startService(false);
+    log('MCP disabled (--no-mcp)');
+    return;
+  }
+
+  // 默认：MCP 模式。画布状态托管在 daemon，本进程只负责协议转发。
+  await startMcp();
 }
 
 main().catch((err) => {
